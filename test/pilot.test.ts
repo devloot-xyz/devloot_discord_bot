@@ -24,6 +24,11 @@ import { DiscordGateway } from '../src/discord/discord.gateway';
 import { DiscordSetupService } from '../src/discord/handlers/discord-setup.service';
 import { CoreApiClient, CoreApiError } from '../src/core/core-api.client';
 import { pilotCommands } from '../src/discord/command-definitions';
+import {
+  makeComponentId,
+  parseComponentId,
+  PilotComponentRouter,
+} from '../src/discord/component-router';
 
 const env = {
   DISCORD_GUILD_ID: TEST_GUILD_ID,
@@ -102,6 +107,7 @@ test('foreign guild and DM interactions cannot reach setup or Core', async () =>
     config(),
     setup as unknown as DiscordSetupService,
     core as unknown as CoreApiClient,
+    new PilotComponentRouter(),
   );
   for (const id of [null, 'another-guild']) {
     const input = interaction(id, 'setup-server');
@@ -110,6 +116,65 @@ test('foreign guild and DM interactions cannot reach setup or Core', async () =>
   }
   assert.equal(setup.handleSetupServer.mock.callCount(), 0);
   assert.equal(core.isHealthy.mock.callCount(), 0);
+});
+
+test('versioned buttons route only registered actions inside the pilot guild', async () => {
+  const components = new PilotComponentRouter();
+  const handler = mock.fn(async (_interaction: unknown, entityId: string) => {
+    assert.equal(entityId, 'issue_42');
+  });
+  components.register('issue', 'view', handler);
+  assert.throws(
+    () => components.register('issue', 'view', handler),
+    /Duplicate/,
+  );
+  const customId = makeComponentId({
+    feature: 'issue',
+    action: 'view',
+    entityId: 'issue_42',
+  });
+  assert.deepEqual(parseComponentId(customId), {
+    feature: 'issue',
+    action: 'view',
+    entityId: 'issue_42',
+  });
+  assert.equal(parseComponentId('dl:v2:issue:view:issue_42'), null);
+  assert.throws(() =>
+    makeComponentId({
+      feature: 'issue',
+      action: 'view',
+      entityId: 'a'.repeat(90),
+    }),
+  );
+
+  const gateway = new DiscordGateway(
+    {} as Client,
+    config(),
+    {} as DiscordSetupService,
+    {} as CoreApiClient,
+    components,
+  );
+  const button = (guildId: string, id: string) => {
+    const input = interaction(guildId);
+    Object.assign(input.value, {
+      customId: id,
+      isChatInputCommand: () => false,
+      isButton: () => true,
+    });
+    return input;
+  };
+  await gateway.handleInteraction(
+    button(TEST_GUILD_ID, customId).asInteraction,
+  );
+  assert.equal(handler.mock.callCount(), 1);
+
+  const oldButton = button(TEST_GUILD_ID, 'legacy:issue:42');
+  await gateway.handleInteraction(oldButton.asInteraction);
+  assert.equal(oldButton.value.reply.mock.callCount(), 1);
+  const foreignButton = button('foreign-guild', customId);
+  await gateway.handleInteraction(foreignButton.asInteraction);
+  assert.equal(foreignButton.value.reply.mock.callCount(), 1);
+  assert.equal(handler.mock.callCount(), 1);
 });
 
 test('slow Core operations acknowledge first; failures can still produce a private reply', async () => {
@@ -125,6 +190,7 @@ test('slow Core operations acknowledge first; failures can still produce a priva
     config(),
     {} as DiscordSetupService,
     core as unknown as CoreApiClient,
+    new PilotComponentRouter(),
   );
   await gateway.handleInteraction(input.asInteraction);
   assert.deepEqual(input.calls, ['defer', 'edit']);
@@ -150,6 +216,7 @@ test('ordinary startup registers no commands, performs no setup and destroys gat
     config(),
     setup as unknown as DiscordSetupService,
     {} as CoreApiClient,
+    new PilotComponentRouter(),
   );
   await gateway.onModuleInit();
   assert.equal(client.login.mock.callCount(), 1);
@@ -170,6 +237,7 @@ test('application identity mismatch never logs in', async () => {
     config(),
     {} as DiscordSetupService,
     {} as CoreApiClient,
+    new PilotComponentRouter(),
   );
   await assert.rejects(gateway.onModuleInit(), /verify application identity/);
   assert.equal(client.login.mock.callCount(), 0);
@@ -330,6 +398,7 @@ test('shared production/test bot is rejected before opening the gateway', async 
     config(),
     {} as DiscordSetupService,
     {} as CoreApiClient,
+    new PilotComponentRouter(),
   );
   await assert.rejects(gateway.onModuleInit(), /test-only guild membership/);
   assert.equal(client.login.mock.callCount(), 0);

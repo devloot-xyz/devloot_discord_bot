@@ -9,6 +9,7 @@ import { Client, Events, Interaction, MessageFlags } from 'discord.js';
 import { PilotConfig } from '../config/pilot.config';
 import { CoreApiClient } from '../core/core-api.client';
 import { DiscordSetupService } from './handlers/discord-setup.service';
+import { PilotComponentRouter } from './component-router';
 import { verifyPilotIdentity } from './verify-pilot-identity';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class DiscordGateway implements OnModuleInit, OnApplicationShutdown {
     private readonly config: PilotConfig,
     private readonly setup: DiscordSetupService,
     private readonly core: CoreApiClient,
+    private readonly components: PilotComponentRouter,
   ) {}
 
   async onModuleInit() {
@@ -88,8 +90,10 @@ export class DiscordGateway implements OnModuleInit, OnApplicationShutdown {
             return;
         }
       }
-      // Long-lived components will use dl:v1:<feature>:<action>:<id> in P02+.
-      // Never hand stale legacy buttons to a database writer.
+      if (interaction.isButton()) {
+        await this.components.dispatch(interaction);
+        return;
+      }
       await interaction.reply({
         content:
           'This action is no longer available. Run a current slash command.',

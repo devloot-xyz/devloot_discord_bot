@@ -5,6 +5,7 @@ import { CoreApiClient } from '../core/core-api.client';
 import { DiscordGateway } from './discord.gateway';
 import { DiscordSetupService } from './handlers/discord-setup.service';
 import { HealthController } from './health.controller';
+import { PilotComponentRouter } from './component-router';
 
 @Module({
   providers: [
@@ -12,6 +13,7 @@ import { HealthController } from './health.controller';
     CoreApiClient,
     DiscordGateway,
     DiscordSetupService,
+    PilotComponentRouter,
     {
       provide: 'DISCORD_CLIENT',
       useFactory: () =>
