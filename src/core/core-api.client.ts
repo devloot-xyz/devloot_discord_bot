@@ -90,6 +90,84 @@ export class CoreApiClient {
     guildId: string,
     requestId: string,
   ): Promise<string> {
+    const assertion = this.serviceAssertion(discordId, guildId);
+    try {
+      const response = await fetch(
+        `${this.config.value.coreApiUrl}/api/discord/link-requests`,
+        {
+          method: 'POST',
+          redirect: 'error',
+          signal: AbortSignal.timeout(this.config.value.timeoutMs),
+          headers: {
+            authorization: `Bearer ${assertion}`,
+            'x-request-id': requestId,
+          },
+        },
+      );
+      if (!response.ok) throw new CoreApiError('http', response.status);
+      const result: unknown = await response.json();
+      const value =
+        result && typeof result === 'object' && 'url' in result
+          ? result.url
+          : null;
+      if (typeof value !== 'string') throw new CoreApiError('invalid-response');
+      const url = new URL(value);
+      const web = new URL(this.config.value.coreWebUrl);
+      if (
+        url.origin !== web.origin ||
+        url.pathname !== '/connect' ||
+        !/^[A-Za-z0-9_-]{43}$/.test(url.searchParams.get('discord_link') ?? '')
+      )
+        throw new CoreApiError('invalid-response');
+      return url.toString();
+    } catch (error) {
+      if (error instanceof CoreApiError) throw error;
+      throw new CoreApiError('unavailable');
+    }
+  }
+
+  async isDiscordLinked(
+    discordId: string,
+    guildId: string,
+    requestId: string,
+  ): Promise<boolean> {
+    const assertion = this.serviceAssertion(discordId, guildId);
+    try {
+      const response = await fetch(
+        `${this.config.value.coreApiUrl}/api/discord/actor`,
+        {
+          redirect: 'error',
+          signal: AbortSignal.timeout(this.config.value.timeoutMs),
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${assertion}`,
+            'x-request-id': requestId,
+          },
+        },
+      );
+      if (!response.ok) throw new CoreApiError('http', response.status);
+      const result: unknown = await response.json();
+      if (!result || typeof result !== 'object' || !('user' in result))
+        throw new CoreApiError('invalid-response');
+      if (result.user === null) return false;
+      if (
+        typeof result.user !== 'object' ||
+        !result.user ||
+        !('id' in result.user) ||
+        typeof result.user.id !== 'number' ||
+        !Number.isInteger(result.user.id) ||
+        !('username' in result.user) ||
+        typeof result.user.username !== 'string'
+      )
+        throw new CoreApiError('invalid-response');
+      return true;
+    } catch (error) {
+      if (error instanceof CoreApiError) throw error;
+      throw new CoreApiError('unavailable');
+    }
+  }
+
+  private serviceAssertion(discordId: string, guildId: string): string {
     if (!/^\d{17,20}$/.test(discordId))
       throw new Error('Invalid Discord actor');
     this.config.assertGuild(guildId);
@@ -116,38 +194,6 @@ export class CoreApiClient {
     )
       .update(body)
       .digest('base64url');
-    try {
-      const response = await fetch(
-        `${this.config.value.coreApiUrl}/api/discord/link-requests`,
-        {
-          method: 'POST',
-          redirect: 'error',
-          signal: AbortSignal.timeout(this.config.value.timeoutMs),
-          headers: {
-            authorization: `Bearer ${body}.${signature}`,
-            'x-request-id': requestId,
-          },
-        },
-      );
-      if (!response.ok) throw new CoreApiError('http', response.status);
-      const result: unknown = await response.json();
-      const value =
-        result && typeof result === 'object' && 'url' in result
-          ? result.url
-          : null;
-      if (typeof value !== 'string') throw new CoreApiError('invalid-response');
-      const url = new URL(value);
-      const web = new URL(this.config.value.coreWebUrl);
-      if (
-        url.origin !== web.origin ||
-        url.pathname !== '/connect' ||
-        !/^[A-Za-z0-9_-]{43}$/.test(url.searchParams.get('discord_link') ?? '')
-      )
-        throw new CoreApiError('invalid-response');
-      return url.toString();
-    } catch (error) {
-      if (error instanceof CoreApiError) throw error;
-      throw new CoreApiError('unavailable');
-    }
+    return `${body}.${signature}`;
   }
 }

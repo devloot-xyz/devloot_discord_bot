@@ -222,13 +222,11 @@ test('connect signs the Discord actor and returns only a trusted, opaque web lin
   const original = globalThis.fetch;
   try {
     const token = 'a'.repeat(43);
+    const requestedPaths: string[] = [];
     globalThis.fetch = mock.fn(
       async (input: string | URL | Request, init?: RequestInit) => {
-        assert.equal(
-          new URL(String(input)).pathname,
-          '/api/discord/link-requests',
-        );
-        assert.equal(init?.method, 'POST');
+        const path = new URL(String(input)).pathname;
+        requestedPaths.push(path);
         const assertion = String(
           (init?.headers as Record<string, string>).authorization,
         ).slice(7);
@@ -250,6 +248,12 @@ test('connect signs the Discord actor and returns only a trusted, opaque web lin
             .digest('base64url'),
         );
         assert.equal('userId' in claims, false);
+        if (path === '/api/discord/actor') {
+          assert.equal(init?.method, undefined);
+          return Response.json({ user: null });
+        }
+        assert.equal(path, '/api/discord/link-requests');
+        assert.equal(init?.method, 'POST');
         return Response.json({
           url: `http://localhost:5173/connect?discord_link=${token}`,
         });
@@ -265,6 +269,10 @@ test('connect signs the Discord actor and returns only a trusted, opaque web lin
     );
     await gateway.handleInteraction(input.asInteraction);
     assert.deepEqual(input.calls, ['defer', 'edit']);
+    assert.deepEqual(requestedPaths, [
+      '/api/discord/actor',
+      '/api/discord/link-requests',
+    ]);
     assert.match(
       String(input.value.editReply.mock.calls[0].arguments[0]),
       /\/connect\?discord_link=a{43}/,
@@ -285,6 +293,29 @@ test('connect signs the Discord actor and returns only a trusted, opaque web lin
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test('connect recognizes an already-linked Discord account without creating a new link', async () => {
+  const input = interaction(TEST_GUILD_ID, 'connect');
+  const core = {
+    isDiscordLinked: mock.fn(async () => true),
+    startDiscordLink: mock.fn(async () => 'http://localhost:5173/connect'),
+  };
+  const gateway = new DiscordGateway(
+    {} as Client,
+    config(),
+    {} as DiscordSetupService,
+    core as unknown as CoreApiClient,
+    new PilotComponentRouter(),
+  );
+  await gateway.handleInteraction(input.asInteraction);
+  assert.deepEqual(input.calls, ['defer', 'edit']);
+  assert.equal(core.isDiscordLinked.mock.callCount(), 1);
+  assert.equal(core.startDiscordLink.mock.callCount(), 0);
+  assert.match(
+    String(input.value.editReply.mock.calls[0].arguments[0]),
+    /already linked/,
+  );
 });
 
 test('ordinary startup registers no commands, performs no setup and destroys gateway on shutdown', async () => {

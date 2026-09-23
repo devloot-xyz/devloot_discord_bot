@@ -81,6 +81,18 @@ export class DiscordGateway implements OnModuleInit, OnApplicationShutdown {
           }
           case 'connect': {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            if (
+              await this.core.isDiscordLinked(
+                interaction.user.id,
+                interaction.guildId!,
+                interaction.id,
+              )
+            ) {
+              await interaction.editReply(
+                'Your Discord account is already linked to DevLoot. You do not need to run /connect again.',
+              );
+              return;
+            }
             const url = await this.core.startDiscordLink(
               interaction.user.id,
               interaction.guildId!,
