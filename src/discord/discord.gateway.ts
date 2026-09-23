@@ -75,7 +75,19 @@ export class DiscordGateway implements OnModuleInit, OnApplicationShutdown {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const core = await this.core.probe(interaction.id);
             await interaction.editReply(
-              `Discord: connected\nCore API: ${core === 'unavailable' ? 'unavailable' : 'reachable'}${core === 'existing' ? ' (running Core container)' : ''}\n${core === 'existing' ? 'Omnichannel Core changes are not active in this container.\n' : ''}Account linking and rewards are not enabled yet.`,
+              `Discord: connected\nCore API: ${core === 'unavailable' ? 'unavailable' : 'reachable'}${core === 'existing' ? ' (running Core container)' : ''}\n${core === 'existing' ? 'Omnichannel Core changes are not active in this container.\n' : ''}Account linking: ${core === 'integrated' ? 'available via /connect' : 'unavailable'}\nRewards: not enabled yet.`,
+            );
+            return;
+          }
+          case 'connect': {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const url = await this.core.startDiscordLink(
+              interaction.user.id,
+              interaction.guildId!,
+              interaction.id,
+            );
+            await interaction.editReply(
+              `Continue linking your Discord account in DevLoot: ${url}\nThis link expires in 10 minutes.`,
             );
             return;
           }

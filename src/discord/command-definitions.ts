@@ -9,6 +9,9 @@ export function pilotCommands() {
       .setName('status')
       .setDescription('Check Discord and Core connectivity'),
     new SlashCommandBuilder()
+      .setName('connect')
+      .setDescription('Start linking your Discord account to DevLoot'),
+    new SlashCommandBuilder()
       .setName('setup-server')
       .setDescription('Preview or apply the development server setup')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)

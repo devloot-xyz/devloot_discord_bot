@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHmac } from 'node:crypto';
 import {
   ChannelType,
   Client,
@@ -36,6 +37,7 @@ const env = {
   DISCORD_COMMAND_SCOPE: 'guild',
   DISCORD_CLIENT_ID: '1494925337811751999',
   DISCORD_BOT_TOKEN: 'fixture-only',
+  DISCORD_SERVICE_KEY: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
   CORE_API_URL: 'http://127.0.0.1:3000',
   CORE_WEB_URL: 'http://localhost:5173',
 };
@@ -65,10 +67,10 @@ test('pilot command catalog excludes legacy reward writers and restricts setup t
   const commands = pilotCommands();
   assert.deepEqual(
     commands.map((c) => c.name),
-    ['ping', 'status', 'setup-server'],
+    ['ping', 'status', 'connect', 'setup-server'],
   );
   assert.equal(
-    commands[2].default_member_permissions,
+    commands[3].default_member_permissions,
     PermissionFlagsBits.Administrator.toString(),
   );
 });
@@ -79,6 +81,7 @@ function interaction(guildId: string | null, commandName = 'ping') {
     id: 'request-1',
     guildId,
     commandName,
+    user: { id: '1494937185101545472' },
     deferred: false,
     replied: false,
     isRepliable: () => true,
@@ -213,6 +216,75 @@ test('status distinguishes the running Core container from the integrated checko
     /Core API: reachable \(running Core container\)/,
   );
   assert.match(String(message), /Omnichannel Core changes are not active/);
+});
+
+test('connect signs the Discord actor and returns only a trusted, opaque web link', async () => {
+  const original = globalThis.fetch;
+  try {
+    const token = 'a'.repeat(43);
+    globalThis.fetch = mock.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        assert.equal(
+          new URL(String(input)).pathname,
+          '/api/discord/link-requests',
+        );
+        assert.equal(init?.method, 'POST');
+        const assertion = String(
+          (init?.headers as Record<string, string>).authorization,
+        ).slice(7);
+        const [header, payload, signature] = assertion.split('.');
+        assert.equal(
+          JSON.parse(Buffer.from(header, 'base64url').toString()).alg,
+          'HS256',
+        );
+        const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
+        assert.equal(claims.discordId, '1494937185101545472');
+        assert.equal(claims.guildId, TEST_GUILD_ID);
+        assert.equal(claims.aud, 'devloot-core-discord-link');
+        assert.equal(claims.sub, env.DISCORD_CLIENT_ID);
+        assert.ok(claims.exp - claims.iat <= 30);
+        assert.equal(
+          signature,
+          createHmac('sha256', Buffer.from(env.DISCORD_SERVICE_KEY, 'base64'))
+            .update(`${header}.${payload}`)
+            .digest('base64url'),
+        );
+        assert.equal('userId' in claims, false);
+        return Response.json({
+          url: `http://localhost:5173/connect?discord_link=${token}`,
+        });
+      },
+    ) as typeof fetch;
+    const input = interaction(TEST_GUILD_ID, 'connect');
+    const gateway = new DiscordGateway(
+      {} as Client,
+      config(),
+      {} as DiscordSetupService,
+      new CoreApiClient(config()),
+      new PilotComponentRouter(),
+    );
+    await gateway.handleInteraction(input.asInteraction);
+    assert.deepEqual(input.calls, ['defer', 'edit']);
+    assert.match(
+      String(input.value.editReply.mock.calls[0].arguments[0]),
+      /\/connect\?discord_link=a{43}/,
+    );
+
+    globalThis.fetch = async () =>
+      Response.json({
+        url: 'https://evil.example/connect?discord_link=' + token,
+      });
+    await assert.rejects(
+      new CoreApiClient(config()).startDiscordLink(
+        env.DISCORD_CLIENT_ID,
+        TEST_GUILD_ID,
+        'request',
+      ),
+      (error: CoreApiError) => error.kind === 'invalid-response',
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('ordinary startup registers no commands, performs no setup and destroys gateway on shutdown', async () => {
