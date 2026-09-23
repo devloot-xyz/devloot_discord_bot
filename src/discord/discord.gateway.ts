@@ -73,9 +73,9 @@ export class DiscordGateway implements OnModuleInit, OnApplicationShutdown {
             return;
           case 'status': {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            const healthy = await this.core.isHealthy(interaction.id);
+            const core = await this.core.probe(interaction.id);
             await interaction.editReply(
-              `Discord: connected\nCore API: ${healthy ? 'reachable' : 'unavailable'}\nAccount linking and rewards are not enabled yet.`,
+              `Discord: connected\nCore API: ${core === 'unavailable' ? 'unavailable' : 'reachable'}${core === 'existing' ? ' (running Core container)' : ''}\n${core === 'existing' ? 'Omnichannel Core changes are not active in this container.\n' : ''}Account linking and rewards are not enabled yet.`,
             );
             return;
           }

@@ -41,9 +41,11 @@ export class CoreApiClient {
     }
   }
 
-  async isHealthy(requestId: string): Promise<boolean> {
+  async probe(
+    requestId: string,
+  ): Promise<'integrated' | 'existing' | 'unavailable'> {
     try {
-      return await this.get(
+      const healthy = await this.get(
         '/health',
         (body) => {
           if (!body || typeof body !== 'object' || !('status' in body))
@@ -52,8 +54,33 @@ export class CoreApiClient {
         },
         requestId,
       );
-    } catch {
-      return false;
+      return healthy ? 'integrated' : 'unavailable';
+    } catch (error) {
+      if (
+        !(error instanceof CoreApiError) ||
+        error.kind !== 'http' ||
+        error.status !== 404
+      )
+        return 'unavailable';
     }
+
+    // The current local Core container predates /health. Its known root response
+    // establishes API liveness without claiming that omnichannel changes are active.
+    try {
+      const response = await fetch(`${this.config.value.coreApiUrl}/`, {
+        signal: AbortSignal.timeout(this.config.value.timeoutMs),
+        redirect: 'error',
+        headers: { accept: 'text/plain', 'x-request-id': requestId },
+      });
+      return response.ok && (await response.text()).trim() === 'Hello World!'
+        ? 'existing'
+        : 'unavailable';
+    } catch {
+      return 'unavailable';
+    }
+  }
+
+  async isHealthy(requestId: string): Promise<boolean> {
+    return (await this.probe(requestId)) !== 'unavailable';
   }
 }

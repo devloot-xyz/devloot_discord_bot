@@ -91,7 +91,7 @@ function interaction(guildId: string | null, commandName = 'ping') {
       calls.push('defer');
       value.deferred = true;
     }),
-    editReply: mock.fn(async () => {
+    editReply: mock.fn(async (_content: unknown) => {
       calls.push('edit');
     }),
     followUp: mock.fn(async () => {}),
@@ -180,7 +180,7 @@ test('versioned buttons route only registered actions inside the pilot guild', a
 test('slow Core operations acknowledge first; failures can still produce a private reply', async () => {
   const input = interaction(TEST_GUILD_ID, 'status');
   const core = {
-    isHealthy: async () => {
+    probe: async () => {
       assert.deepEqual(input.calls, ['defer']);
       throw new Error('secret-token');
     },
@@ -194,6 +194,25 @@ test('slow Core operations acknowledge first; failures can still produce a priva
   );
   await gateway.handleInteraction(input.asInteraction);
   assert.deepEqual(input.calls, ['defer', 'edit']);
+});
+
+test('status distinguishes the running Core container from the integrated checkout', async () => {
+  const input = interaction(TEST_GUILD_ID, 'status');
+  const core = { probe: async () => 'existing' as const };
+  const gateway = new DiscordGateway(
+    {} as Client,
+    config(),
+    {} as DiscordSetupService,
+    core as unknown as CoreApiClient,
+    new PilotComponentRouter(),
+  );
+  await gateway.handleInteraction(input.asInteraction);
+  const message = input.value.editReply.mock.calls[0].arguments[0];
+  assert.match(
+    String(message),
+    /Core API: reachable \(running Core container\)/,
+  );
+  assert.match(String(message), /Omnichannel Core changes are not active/);
 });
 
 test('ordinary startup registers no commands, performs no setup and destroys gateway on shutdown', async () => {
@@ -376,6 +395,32 @@ test('Core client enforces bounded reads, no redirects or writes and redacts fai
     );
     globalThis.fetch = async () => new Response('oops', { status: 200 });
     assert.equal(await core.isHealthy('test-request'), false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('Core probe accepts the existing container root only after /health returns 404', async () => {
+  const original = globalThis.fetch;
+  try {
+    const paths: string[] = [];
+    globalThis.fetch = mock.fn(async (url: string, init: RequestInit) => {
+      paths.push(new URL(url).pathname);
+      assert.equal(init.redirect, 'error');
+      assert.equal(
+        (init.headers as Record<string, string>)['x-request-id'],
+        'probe-request',
+      );
+      return url.endsWith('/health')
+        ? new Response('Not Found', { status: 404 })
+        : new Response('Hello World!', { status: 200 });
+    }) as typeof fetch;
+    const core = new CoreApiClient(config());
+    assert.equal(await core.probe('probe-request'), 'existing');
+    assert.deepEqual(paths, ['/health', '/']);
+
+    globalThis.fetch = async () => new Response('Not Found', { status: 500 });
+    assert.equal(await core.probe('probe-request'), 'unavailable');
   } finally {
     globalThis.fetch = original;
   }
