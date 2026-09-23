@@ -6,7 +6,7 @@ Implementation started 2026-09-23. This is the first P00/P01 slice of the omnich
 - Core branch: `codex/discord-omnichannel-engine`, in the sibling `devloot-core-omnichannel` worktree.
 - Core combines `066d18f` (current profile/Dream Team work) with `origin/feat/data-engine` at `4f890b3`.
 - Only guild `1494925337811751002` is accepted. Configuration, gateway input, setup and command deployment enforce this.
-- No live guild changes or command deployment have been performed. Test bot credentials are not available in this checkout; the available Developer Portal browser session is signed out.
+- No live guild changes or command deployment have been performed. Safari is authenticated; the development application and guild have been inspected. The existing token is hidden in the portal and is absent from the bot and Core local environment files.
 
 ## What runs now
 
@@ -85,3 +85,20 @@ After setup: run `/ping`, `/status`, `/setup-server` (preview) and `/setup-serve
 The upstream engine's passing tests do not establish replay/concurrency-safe awards. No new reward rules have been activated, no shared database was migrated, and no services were deployed. Next: finish the live P01 checks, then P02 secure Discord linking/service authentication; P05/P06 reliability work remains required before enabling engine rewards.
 
 Discord's [guild command documentation](https://docs.discord.com/developers/docs/interactions/slash-commands) describes the application/guild command route used by the explicit deploy script.
+
+## Safari inventory (2026-09-23)
+
+The authenticated Developer Portal shows `devloot_developer-bot#8528`, application ID `1494937185101545472`, with approximately one server installation. Discord confirms it is a member of `devloot - dev_server` (`1494925337811751002`) and currently offline. A separate `devloot bot` is online in that guild. Both have historical onboarding posts; none was edited or deleted.
+
+| Existing channel | ID | Pilot mapping |
+| --- | --- | --- |
+| 🔓-verify | 1494963935420612709 | onboarding |
+| ⚖️-rules | 1494963936393564209 | retain |
+| 📢-announcement | 1494963937408712765 | retain |
+| ⚡-general | 1494963938662551616 | retain; private |
+| 💡-proposals | 1494963940076294214 | retain; private |
+| 💰-feed | 1494963941103767622 | opportunities |
+
+The ignored local `.env` now contains the application ID, and `.discord/1494925337811751002.json` maps onboarding and opportunities to these existing IDs. No guild resources were provisioned. The authenticated bot inventory/preview still needs to verify effective permissions before applying the remaining role and shipped/missions/private-review channels. Server settings did not open through the current Safari controls, so role-management permissions and hierarchy remain unverified.
+
+The portal has Public Bot and all three privileged intents enabled. These were left unchanged; the new gateway requests only Guilds. Existing-token retrieval is unavailable: Discord offers only Reset Token. Supply an existing saved token via the local environment file, or have the application owner regenerate it and save it as `DISCORD_BOT_TOKEN`. Credential reset is a user-performed browser handoff. Never paste the token in chat.
