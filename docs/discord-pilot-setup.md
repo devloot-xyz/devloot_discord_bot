@@ -4,7 +4,7 @@ Implementation started 2026-09-23. This is the first P00/P01 slice of the omnich
 
 - Bot branch: `codex/discord-omnichannel-pilot`.
 - Core branch: `codex/discord-omnichannel-engine`, in the sibling `devloot-core-omnichannel` worktree.
-- Core combines `066d18f` (current profile/Dream Team work) with `origin/feat/data-engine` at `4f890b3`.
+- Core combines `066d18f` (current profile/Dream Team work) with `origin/feat/data-engine` through `8c13a82` in integration commit `8825ef2`.
 - Only guild `1494925337811751002` is accepted. Configuration, gateway input, setup and command deployment enforce this.
 - Live development setup is complete: the dedicated bot identity and sole test-guild membership were verified, channels/role provisioned, and three guild commands deployed. Credentials are stored only in the ignored local `.env`. The gateway is running locally on port 3011; the current Core container still lacks the integrated branch health endpoint.
 
@@ -14,7 +14,7 @@ The pilot registers `/ping`, `/status` and administrator-only `/setup-server`. A
 
 Process startup verifies the bot identity and test-only guild membership, connects with just the Guilds intent and installs interaction handlers. It does not register commands, create channels, post onboarding, start legacy jobs or access a database. The Docker startup no longer runs migrations. Core owns business migrations.
 
-Legacy command/service source is retained but is not wired into this test application. Production should continue using its existing branch/deployment. Linking, profiles, discovery, engine rewards, feeds, missions and moderation are not yet enabled. Old buttons/commands fail closed instead of reaching legacy writers. The Core client currently permits public reads only, with a timeout and redirects disabled; P02 must implement service authentication before any channel mutation.
+Legacy command/service source is retained but is not wired into this test application. Production should continue using its existing branch/deployment. Linking, profiles, discovery, engine rewards, feeds, missions and moderation are not yet enabled. Versioned `dl:v1:<feature>:<action>:<entityId>` buttons enter a registry of explicitly installed handlers; legacy, malformed, and unregistered buttons receive a private stale-action response. No domain button handlers are installed yet. The Core client currently permits public reads only, with a timeout and redirects disabled; P02 must implement service authentication before any channel mutation.
 
 ## Local configuration
 
@@ -76,11 +76,11 @@ After setup: run `/ping`, `/status`, `/setup-server` (preview) and `/setup-serve
 
 ## Validation performed
 
-- Bot build, TypeScript check and 12 tests pass. Tests cover configuration, identity mismatch/shared bots, guild/DM rejection, deferred replies, lifecycle, setup restart/idempotency, private review permissions, collision handling, Core failure handling and complete Nest health/readiness behavior without Prisma.
+- Bot build, TypeScript check and 13 tests pass. Tests cover configuration, identity mismatch/shared bots, guild/DM rejection, versioned button routing, deferred replies, lifecycle, setup restart/idempotency, private review permissions, collision handling, Core failure handling and complete Nest health/readiness behavior without Prisma.
 - Core server build and `architecture:verify` pass. Prisma is removed from engine domain/port contracts; issue snapshot reads and achievement claims cross module boundaries through exported ports.
 - Core: 47 focused suites / 265 tests; API/worker composition: 2 suites / 7 tests; PostgreSQL engine/vote/comment integration: 3 suites / 11 tests. All pass.
 - Web: TypeScript check and 3 relevant suites / 8 tests pass, including engine admin tabs and bounty-board navigation.
-- All 46 combined migrations applied successfully to an empty disposable PostgreSQL database. Separately, the original Core migrations were applied, a user with 137 XP inserted, and the combined migrations applied; the user retained 137 XP and migration status was current.
+- All 47 combined migrations applied successfully to an empty disposable PostgreSQL database. The prior 46-migration database upgraded with the new backfill migration; the test user retained 137 XP and migration status was current. The refreshed engine's 28 suites / 116 tests and updated admin trackables 7 tests pass.
 
 The upstream engine's passing tests do not establish replay/concurrency-safe awards. No new reward rules have been activated and no shared database was migrated. The bot is running locally; no hosted deployment was made. Next: connect the integrated Core test runtime, then P02 secure Discord linking/service authentication; P05/P06 reliability work remains required before enabling engine rewards.
 
