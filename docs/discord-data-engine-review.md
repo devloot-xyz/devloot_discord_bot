@@ -4,6 +4,23 @@
 
 Next: [implementation plan and test-guild rollout](discord-implementation-plan.md).
 
+## Update: engine branch at `8c13a82` (2026-09-23)
+
+The cofounder's branch advanced from `4f890b3` to `8c13a82` in 12 commits. This is source review of the fetched branch, not a claim that the updated engine is deployed or already merged into the isolated Core integration checkout (`b85f67a`).
+
+| New capability | What it enables for Discord | Remaining gate |
+|---|---|---|
+| Event bridge with 11 catalog mappings and startup seeding | Bounty created/claimed/review/refund signals and XP snapshots can feed shared cards and milestone rules without inventing a new catalog. `bounty.claimed.count` is the first pilot signal. | The bridge listens to in-process events and logs record failures; it has no durable source event ID or replay guarantee. |
+| Catalog/custom split in the admin screen and server-side edit guard | Operators can see which trackables have a coded producer; key, entity type and aggregation are fixed for catalog entries. | A catalog entry is only a producer mapping, not proof of complete history or reward safety. |
+| Seven ground-truth backfill queries, queue job and guarded admin endpoint | Existing created/claimed/revoked/refunded/resolved/disputed/XP totals can be reconstructed in a test environment. The UI defaults retroactive rule triggering to off. | Snapshot replacement can race live events; jobs lack a source watermark, per-row transaction boundary and detailed progress. Four mapped bounty signals have no backfill source. |
+| `lastBackfilledAt` and PostgreSQL source tests | Operators can see a completed timestamp and the source queries have fixture coverage. | A timestamp does not report partial failure, historical rules executed, or whether live events were overwritten. |
+
+The mappings still use wallet strings for user metrics. In particular, the claimed-bounty backfill joins winners to wallets and excludes a GitHub-only winner without one. This is incompatible with the planned walletless Discord onboarding until new canonical-user metrics or explicit identity resolution are added. `user.xp.total` is an observation signal; do not let a rule that awards XP trigger itself through that signal. The new retroactive-rules toggle must stay disabled for the pilot until P06 supplies once-only execution and idempotent XP/action keys.
+
+**Plan change:** P00 now refreshes the existing integration checkout with these commits. P05 reuses and hardens the bridge/backfill instead of building those from scratch; P06 explicitly gates retroactive rule execution; P08 reuses `bounty.claimed.count` only after durable acceptance and canonical recipient resolution. Pilot A's read-only profile/discovery order is unchanged.
+
+Sources: [catalog mappings](https://github.com/devloot-xyz/devloot-core/blob/8c13a826a8f7809a0fc27df8c437e4f4c6a8f991/server/src/modules/engine/infrastructure/event-bridge/event-mappings.ts), [bridge](https://github.com/devloot-xyz/devloot-core/blob/8c13a826a8f7809a0fc27df8c437e4f4c6a8f991/server/src/modules/engine/infrastructure/event-bridge/engine-event-bridge.service.ts), [backfill executor](https://github.com/devloot-xyz/devloot-core/blob/8c13a826a8f7809a0fc27df8c437e4f4c6a8f991/server/src/modules/engine/application/backfill-executor.service.ts), [backfill sources](https://github.com/devloot-xyz/devloot-core/blob/8c13a826a8f7809a0fc27df8c437e4f4c6a8f991/server/src/modules/engine/infrastructure/event-bridge/backfill-sources.ts), [admin backfill UI](https://github.com/devloot-xyz/devloot-core/blob/8c13a826a8f7809a0fc27df8c437e4f4c6a8f991/client/src/pages/admin/EngineTrackablesTab.tsx).
+
 ## Decision
 
 **Use the cofounder's engine as DevLoot's shared engagement metrics and configurable reward-rule layer.** Discord supplies an interface to the same business workflows used by the website. Domain modules authorize and persist actions; the engine tracks the resulting facts and evaluates rules; notifications deliver the outcomes through selected channels.
