@@ -6,7 +6,7 @@ Implementation started 2026-09-23. This is the first P00/P01 slice of the omnich
 - Core branch: `codex/discord-omnichannel-engine`, in the sibling `devloot-core-omnichannel` worktree.
 - Core combines `066d18f` (current profile/Dream Team work) with `origin/feat/data-engine` at `4f890b3`.
 - Only guild `1494925337811751002` is accepted. Configuration, gateway input, setup and command deployment enforce this.
-- No live guild changes or command deployment have been performed. Safari is authenticated; the development application and guild have been inspected. The existing token is hidden in the portal and is absent from the bot and Core local environment files.
+- Live development setup is complete: the dedicated bot identity and sole test-guild membership were verified, channels/role provisioned, and three guild commands deployed. Credentials are stored only in the ignored local `.env`. The gateway is running locally on port 3011; the current Core container still lacks the integrated branch health endpoint.
 
 ## What runs now
 
@@ -72,7 +72,7 @@ Example mapping shape (replace placeholders with actual inventory IDs):
 }
 ```
 
-After setup: run `/ping`, `/status`, `/setup-server` (preview) and `/setup-server apply:true` (should reuse everything), restart the bot, and verify no new public content or duplicate channels. Assign the test moderator role explicitly to intended testers and check its private-channel visibility. These live checks are pending credentials.
+After setup: run `/ping`, `/status`, `/setup-server` (preview) and `/setup-server apply:true` (should reuse everything), restart the bot, and verify no new public content or duplicate channels. Assign the test moderator role explicitly to intended testers and check its private-channel visibility. Live CLI preview/apply, command registration, `/ping`, `/status` and gateway restart checks are complete. Moderator role assignment to individual testers and admin slash-command testing remain pending; the role was deliberately created without assigning members.
 
 ## Validation performed
 
@@ -82,13 +82,13 @@ After setup: run `/ping`, `/status`, `/setup-server` (preview) and `/setup-serve
 - Web: TypeScript check and 3 relevant suites / 8 tests pass, including engine admin tabs and bounty-board navigation.
 - All 46 combined migrations applied successfully to an empty disposable PostgreSQL database. Separately, the original Core migrations were applied, a user with 137 XP inserted, and the combined migrations applied; the user retained 137 XP and migration status was current.
 
-The upstream engine's passing tests do not establish replay/concurrency-safe awards. No new reward rules have been activated, no shared database was migrated, and no services were deployed. Next: finish the live P01 checks, then P02 secure Discord linking/service authentication; P05/P06 reliability work remains required before enabling engine rewards.
+The upstream engine's passing tests do not establish replay/concurrency-safe awards. No new reward rules have been activated and no shared database was migrated. The bot is running locally; no hosted deployment was made. Next: connect the integrated Core test runtime, then P02 secure Discord linking/service authentication; P05/P06 reliability work remains required before enabling engine rewards.
 
 Discord's [guild command documentation](https://docs.discord.com/developers/docs/interactions/slash-commands) describes the application/guild command route used by the explicit deploy script.
 
 ## Safari inventory (2026-09-23)
 
-The authenticated Developer Portal shows `devloot_developer-bot#8528`, application ID `1494937185101545472`, with approximately one server installation. Discord confirms it is a member of `devloot - dev_server` (`1494925337811751002`) and currently offline. A separate `devloot bot` is online in that guild. Both have historical onboarding posts; none was edited or deleted.
+The authenticated Developer Portal shows `devloot_developer-bot#8528`, application ID `1494937185101545472`, with approximately one server installation. Discord confirms it is a member of `devloot - dev_server` (`1494925337811751002`) and was offline during initial inspection. A separate `devloot bot` is online in that guild. Both have historical onboarding posts; none was edited or deleted.
 
 | Existing channel | ID | Pilot mapping |
 | --- | --- | --- |
@@ -99,6 +99,21 @@ The authenticated Developer Portal shows `devloot_developer-bot#8528`, applicati
 | 💡-proposals | 1494963940076294214 | retain; private |
 | 💰-feed | 1494963941103767622 | opportunities |
 
-The ignored local `.env` now contains the application ID, and `.discord/1494925337811751002.json` maps onboarding and opportunities to these existing IDs. No guild resources were provisioned. The authenticated bot inventory/preview still needs to verify effective permissions before applying the remaining role and shipped/missions/private-review channels. Server settings did not open through the current Safari controls, so role-management permissions and hierarchy remain unverified.
+The ignored local `.env` now contains the application ID, and `.discord/1494925337811751002.json` maps onboarding and opportunities to these existing IDs. The initial browser inspection performed no writes. The later authenticated bot inventory and successful setup verified the permissions needed to create the remaining channels and moderator role.
 
 The portal has Public Bot and all three privileged intents enabled. These were left unchanged; the new gateway requests only Guilds. Existing-token retrieval is unavailable: Discord offers only Reset Token. Supply an existing saved token via the local environment file, or have the application owner regenerate it and save it as `DISCORD_BOT_TOKEN`. Credential reset is a user-performed browser handoff. Never paste the token in chat.
+
+## Live setup completed (2026-09-23)
+
+- Authenticated bot ID: `1494937185101545472`; guild inventory confirmed this bot is installed only in `1494925337811751002`.
+- Reused the verify channel for onboarding and bounty-feed channel for opportunities.
+- Created `DevLoot Test Moderator`: `1552403885195264090`. No individual member assignments were made.
+- Created `#shipped`: `1552403886067679282`; `#missions`: `1552403886986235924`; private `#moderator-review`: `1552403888047390891`.
+- Registered `/ping`, `/status`, `/setup-server` against this application and guild only. Existing commands belonging to the other bot were not changed.
+- Repeated setup preview reports reuse for every item; the private-review permissions were fetched and validated.
+- Started the compiled gateway locally on port **3011** because 3001 belongs to the JEV project and 3002 is also occupied. PID is in ignored `.discord/gateway.pid`; logs are in `.discord/gateway.log`. This is a local background process, not a hosted service or reboot-persistent installation.
+- Safari `/ping` returned the private response `Pong! DevLoot development bot is online.`
+- Restarted this gateway and verified that channel IDs and public last-message IDs remained unchanged; the Discord connection recovered. Safari `/status` worked after restart.
+- `GET http://127.0.0.1:3011/health` returns 200. Readiness returns 503 with `discord: true, core: false`. The existing `devloot_api` container at port 3000 returns 404 for `/health`; its running image has not been replaced with the integration branch. `/status` explicitly reports Core unavailable. This does not prevent `/ping` or guild administration.
+
+Remaining: run the integrated Core test API/worker environment, then secure linking and profile/discovery slices. No Core container or database was changed during guild provisioning.
