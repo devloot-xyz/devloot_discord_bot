@@ -1,70 +1,26 @@
-import { Global, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { Client, GatewayIntentBits } from 'discord.js';
+import { PilotConfig } from '../config/pilot.config';
+import { CoreApiClient } from '../core/core-api.client';
 import { DiscordGateway } from './discord.gateway';
-import { DiscordNotificationService } from './services/discord-notification.service';
-import { DiscordXpService } from './services/discord-xp.service';
-import { DiscordRoleService } from './services/discord-role.service';
-import { DiscordGuildService } from './services/discord-guild.service';
 import { DiscordSetupService } from './handlers/discord-setup.service';
-import { DiscordVerifyService } from './handlers/discord-verify.service';
-import { ProposalVoteService } from './services/proposal-vote.service';
-import { ChannelModerationService } from './services/channel-moderation.service';
-import { XpSyncService } from './services/xp-sync.service';
-import { ChefSchedulerService } from './services/chef-scheduler.service';
-import { AutoThreadingService } from './services/auto-threading.service';
-import { CommandDispatcherService } from './services/command-dispatcher.service';
-import { WelcomeService } from './services/welcome.service';
-import { OnboardingCommand } from './commands/onboarding';
-import { RankCommand } from './commands/rank';
-import { DailyCommand } from './commands/daily';
-import { QuestCommand } from './commands/quest';
-import { ProposeCommand } from './commands/propose';
-import { ProposalsCommand } from './commands/proposals';
-import { LeaderboardCommand } from './commands/leaderboard';
-import { AiModule } from '../ai/ai.module';
+import { HealthController } from './health.controller';
 
-const DISCORD_CLIENT = {
-  provide: 'DISCORD_CLIENT',
-  useFactory: () => {
-    return new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions,
-      ],
-    });
-  },
-};
-
-@Global()
 @Module({
-  imports: [AiModule],
   providers: [
-    DISCORD_CLIENT,
+    PilotConfig,
+    CoreApiClient,
     DiscordGateway,
-    DiscordNotificationService,
-    DiscordXpService,
-    DiscordRoleService,
-    DiscordGuildService,
     DiscordSetupService,
-    DiscordVerifyService,
-    ProposalVoteService,
-    ChannelModerationService,
-    XpSyncService,
-    ChefSchedulerService,
-    AutoThreadingService,
-    CommandDispatcherService,
-    WelcomeService,
-    OnboardingCommand,
-    RankCommand,
-    DailyCommand,
-    QuestCommand,
-    ProposeCommand,
-    ProposalsCommand,
-    LeaderboardCommand,
+    {
+      provide: 'DISCORD_CLIENT',
+      useFactory: () =>
+        new Client({
+          intents: [GatewayIntentBits.Guilds],
+          allowedMentions: { parse: [], repliedUser: false },
+        }),
+    },
   ],
-  exports: [DiscordNotificationService, DiscordXpService],
+  controllers: [HealthController],
 })
 export class DiscordModule {}

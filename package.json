@@ -8,10 +8,18 @@
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
-    "start:dev": "prisma generate && nest start --watch",
+    "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/src/main",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "test": "npm run test:unit",
+    "test:unit": "node --require ts-node/register --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "commands:deploy:test": "ts-node scripts/discord-pilot.ts commands",
+    "server:inventory": "ts-node scripts/discord-pilot.ts inventory",
+    "server:preview": "ts-node scripts/discord-pilot.ts preview",
+    "server:setup": "ts-node scripts/discord-pilot.ts apply",
+    "server:invite": "ts-node scripts/discord-pilot.ts invite"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

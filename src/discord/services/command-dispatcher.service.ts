@@ -134,7 +134,7 @@ export class CommandDispatcherService {
           this.logger.log(
             `[/setup-server] ${interaction.user.tag} (${discordId}) triggering setup`,
           );
-          await this.setupService.handleSetupServer(interaction, client);
+          await this.setupService.handleSetupServer(interaction);
           break;
         case 'check-chef':
           this.logger.log(`[/check-chef] ${discordId} triggering chef check`);
