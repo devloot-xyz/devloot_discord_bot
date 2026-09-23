@@ -1,8 +1,8 @@
 # Discord omnichannel implementation plan
 
-2026-09-23 · Test guild: **`1494925337811751002`** · Status: ready to implement, no deployment performed.
+2026-09-23 · Test guild: **`1494925337811751002`** · Status: P00 integrated; P01 development guild live locally; no hosted deployment.
 
-Builds on the [product/architecture plan](discord-omnichannel-plan.md) and [committed Core/data-engine review](discord-data-engine-review.md). Reviewed baselines: bot pilot `6c01905`, Core integration checkout `b85f67a` (containing engine `4f890b3`), and updated `origin/feat/data-engine` `8c13a82`. The integration checkout does **not** yet contain the new event bridge or backfill commits. Refresh these refs before implementation and incorporate upstream fixes rather than reimplementing them.
+Builds on the [product/architecture plan](discord-omnichannel-plan.md) and [committed Core/data-engine review](discord-data-engine-review.md). Current baselines: bot pilot branch `codex/discord-omnichannel-pilot` and Core integration checkout `8825ef2` containing `origin/feat/data-engine` through `8c13a82`. The integration now includes the event bridge, catalog controls and backfill commits. P05/P06 still need durable ingestion and reward safety before those features are enabled.
 
 ## Outcome and release boundaries
 
@@ -12,7 +12,7 @@ Builds on the [product/architecture plan](discord-omnichannel-plan.md) and [comm
 
 **Pilot C:** contribution quests, relevant digests, and server-persisted Dream Team missions support repeat participation. JEV moderation runs as a parallel shadow/review track.
 
-Production rollout follows these pilots and their exit checks. This plan does not provision channels, send messages, merge branches or deploy services by itself. The guild ID identifies the intended test destination; bot membership, permissions, channel IDs and credentials must still be verified during setup.
+Production rollout follows these pilots and their exit checks. The development guild was provisioned and verified for the P01 pilot in [the setup record](discord-pilot-setup.md); no Core test runtime or hosted bot service has been deployed.
 
 ## Implementation decisions
 
@@ -71,7 +71,7 @@ Each row is a PR-sized target where practical; schema/behavior changes may need 
 
 Parallel work means separate owners/checkouts, not concurrent edits to shared files. Resolve ownership of Prisma migrations and API/module composition first. Pilot A is P01–P04; P00/P05–P07 can progress alongside it. Pilot B is P08. P09–P12 form Pilot C; moderation need not block any engagement release.
 
-### P00 — Integrate the reviewed Core work
+### P00 — Integrate the reviewed Core work (complete in `8825ef2`)
 
 - Refresh the existing isolated `codex/discord-omnichannel-engine` integration checkout with the engine commits after `4f890b3` through `8c13a82` after checking for overlapping work. Do not modify the cofounder's feature branch or overwrite unrelated working changes.
 - Reconcile Prisma schema/migrations, API and worker module imports, issue DTOs, GitHub adapters and frontend API services. Regenerate the client in the integration checkout and test clean plus existing-database migration paths.
@@ -83,7 +83,7 @@ Parallel work means separate owners/checkouts, not concurrent edits to shared fi
 
 Primary files: bot `src/discord/discord.gateway.ts`, `discord.module.ts`, `services/command-dispatcher.service.ts`, `handlers/discord-setup.service.ts`, `services/welcome.service.ts`, `src/main.ts`, `package.json` and deployment config.
 
-- Add typed configuration and guild/destination checks. Separate command definitions from registration; add proposed `commands:deploy:test` and `test`/`test:unit` scripts (these do not exist today).
+- Add typed configuration and guild/destination checks. Separate command definitions from registration; use the implemented `commands:deploy:test` and `test`/`test:unit` scripts.
 - Acknowledge long interactions before I/O; use request IDs and structured, redacted error logs. Handle shutdown, restart and failed Core calls without losing the ability to reply gracefully.
 - Add a versioned button router. Persist domain workflow state in Core; do not depend on process-local collectors for long-lived mission/feed buttons. Modal paths respond with the modal first, then authorize/validate submitted input.
 - Add health/readiness for gateway and Core connectivity; no automatic channel setup on restart.
@@ -256,6 +256,6 @@ Observability uses request/journey, business-event, engine execution/action and 
 
 ## Immediate starting order
 
-**Refresh P00 against engine `8c13a82` and continue P01, then P02–P04 for Pilot A while P05–P07 prepare Pilot B.** The first demo is a linked developer's real profile and an actionable issue card inside guild `1494925337811751002`. The second demo reuses the new bounty-claim catalog signal after durable ingestion and reward safety are proven. Dream Team and moderation build on those same identities, contracts and delivery paths.
+**Finish P01, then P02–P04 for Pilot A while P05–P07 prepare Pilot B.** P00 now includes engine `8c13a82`. The first demo is a linked developer's real profile and an actionable issue card inside guild `1494925337811751002`. The second demo reuses the new bounty-claim catalog signal after durable ingestion and reward safety are proven. Dream Team and moderation build on those same identities, contracts and delivery paths.
 
-Preflight items to resolve during setup: test application identity/token, bot membership and exact permissions in the supplied guild, test Core/web URLs, test database and GitHub repository, OAuth callback configuration, and a moderator for later evaluation. Store credentials in the existing secret-management mechanism rather than task messages or committed files.
+Remaining preflight: test Core/web runtime URLs, test database and GitHub repository, OAuth callback configuration, and a moderator for later evaluation. The test application identity, bot membership, permissions and guild destinations are verified. Store credentials in the existing secret-management mechanism rather than task messages or committed files.
