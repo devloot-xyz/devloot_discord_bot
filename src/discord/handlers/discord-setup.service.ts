@@ -22,9 +22,10 @@ export const PILOT_CHANNELS = [
     description: 'Test issue and bounty discovery.',
   },
   {
+    // Keep the saved mapping key and topic marker so existing pilot channels retain their IDs.
     key: 'shipped',
-    name: 'shipped',
-    description: 'Test contribution updates and milestone announcements.',
+    name: 'bounty-claims',
+    description: 'Verified DevLoot bounty claim announcements.',
   },
   {
     key: 'missions',
@@ -49,6 +50,10 @@ interface SetupState {
 @Injectable()
 export class DiscordSetupService {
   constructor(private readonly config: PilotConfig) {}
+
+  async managedChannelId(key: ChannelKey): Promise<string | null> {
+    return (await this.readState()).channels[key] ?? null;
+  }
   private get statePath() {
     return join(
       this.config.value.stateDirectory,
@@ -200,10 +205,10 @@ export class DiscordSetupService {
   async preview(guild: Guild): Promise<string[]> {
     const { state } = await this.inspect(guild);
     return [
-      `${state.moderatorRoleId ? 'Reuse' : 'Create'} DevLoot Test Moderator role`,
+      `${state.moderatorRoleId ? 'Already set up' : 'Will create'}: DevLoot Test Moderator role`,
       ...PILOT_CHANNELS.map(
         (c) =>
-          `${state.channels[c.key] ? 'Reuse' : 'Create'} #${c.name}${c.key === 'moderatorReview' ? ' (private)' : ''}`,
+          `${state.channels[c.key] ? 'Already set up' : 'Will create'}: #${c.name}${c.key === 'moderatorReview' ? ' (private)' : ''}`,
       ),
     ];
   }
@@ -236,10 +241,12 @@ export class DiscordSetupService {
         state.moderatorRoleId = role.id;
         await this.save(state);
         results.push(`Created moderator role ${role.id}`);
+      } else {
+        results.push('Already set up: DevLoot Test Moderator role');
       }
       for (const definition of PILOT_CHANNELS) {
         if (state.channels[definition.key]) {
-          results.push(`Reused #${definition.name}`);
+          results.push(`Already set up: #${definition.name}`);
           continue;
         }
         const privateChannel = definition.key === 'moderatorReview';
@@ -298,7 +305,7 @@ export class DiscordSetupService {
       ? this.apply(interaction.guild)
       : this.preview(interaction.guild));
     await interaction.editReply(
-      `${apply ? 'Setup complete' : 'Setup preview — use /setup-server apply:true to create missing items'}\n${results.join('\n')}`,
+      `${apply ? 'Setup finished.' : 'Preview only. Nothing changed. Use `/setup-server apply:true` to create anything missing.'}\n${results.join('\n')}`,
     );
   }
 }

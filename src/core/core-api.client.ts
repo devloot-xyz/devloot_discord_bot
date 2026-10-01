@@ -11,6 +11,38 @@ export class CoreApiError extends Error {
   }
 }
 
+export interface DiscordProfile {
+  username: string | null;
+  xp: number;
+  tier: 'legend' | 'hunter' | 'builder' | 'newcomer';
+  bountiesWon: number;
+  bountiesClaimed: number;
+  bountiesCreated: number;
+  projectsOwned: number;
+  joinedAt: string;
+  github: {
+    followers: number;
+    totalStars: number;
+    publicRepos: number;
+    updatedAt: string;
+  } | null;
+  achievementsEarned: number;
+  assessment: {
+    stack: string[];
+    specialties: string[];
+    experience: string | null;
+    updatedAt: string;
+  } | null;
+  achievements: {
+    id: string;
+    name: string;
+    description: string;
+    points: number;
+    project: string | null;
+    deliveredAt: string;
+  }[];
+}
+
 /** Public reads plus a signed, actor-bound Discord link request. */
 @Injectable()
 export class CoreApiClient {
@@ -21,11 +53,24 @@ export class CoreApiClient {
     parse: (body: unknown) => T,
     requestId: string,
   ): Promise<T> {
-    if (!/^\/[a-zA-Z0-9/_-]*$/.test(path) || path.includes('..')) {
+    return this.getQuery(path, {}, parse, requestId);
+  }
+
+  async getQuery<T>(
+    path: string,
+    query: Record<string, string | number | undefined>,
+    parse: (body: unknown) => T,
+    requestId: string,
+  ): Promise<T> {
+    if (!/^\/[a-zA-Z0-9/_.-]*$/.test(path) || path.includes('..')) {
       throw new Error('Core path must be a local API path');
     }
+    const url = new URL(`${this.config.value.coreApiUrl}${path}`);
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
     try {
-      const response = await fetch(`${this.config.value.coreApiUrl}${path}`, {
+      const response = await fetch(url.toString(), {
         signal: AbortSignal.timeout(this.config.value.timeoutMs),
         redirect: 'error',
         headers: { accept: 'application/json', 'x-request-id': requestId },
@@ -82,7 +127,7 @@ export class CoreApiClient {
   }
 
   async isHealthy(requestId: string): Promise<boolean> {
-    return (await this.probe(requestId)) !== 'unavailable';
+    return (await this.probe(requestId)) === 'integrated';
   }
 
   async startDiscordLink(
@@ -167,6 +212,104 @@ export class CoreApiClient {
     }
   }
 
+  async discordProfile(
+    discordId: string,
+    guildId: string,
+    requestId: string,
+  ): Promise<DiscordProfile | null> {
+    const assertion = this.serviceAssertion(discordId, guildId);
+    try {
+      const response = await fetch(
+        `${this.config.value.coreApiUrl}/api/discord/profile`,
+        {
+          redirect: 'error',
+          signal: AbortSignal.timeout(this.config.value.timeoutMs),
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${assertion}`,
+            'x-request-id': requestId,
+          },
+        },
+      );
+      if (!response.ok) throw new CoreApiError('http', response.status);
+      const result: unknown = await response.json();
+      if (!result || typeof result !== 'object' || !('profile' in result))
+        throw new CoreApiError('invalid-response');
+      if (result.profile === null) return null;
+      if (!isDiscordProfile(result.profile))
+        throw new CoreApiError('invalid-response');
+      return result.profile;
+    } catch (error) {
+      if (error instanceof CoreApiError) throw error;
+      throw new CoreApiError('unavailable');
+    }
+  }
+
+  async discordNotificationPreferences(discordId: string, guildId: string, requestId: string): Promise<{ guildMilestonesEnabled: boolean }> {
+    return this.notificationPreferences(discordId, guildId, requestId);
+  }
+
+  async setDiscordNotificationPreferences(discordId: string, guildId: string, enabled: boolean, requestId: string): Promise<{ guildMilestonesEnabled: boolean }> {
+    return this.notificationPreferences(discordId, guildId, requestId, enabled);
+  }
+
+  private async notificationPreferences(discordId: string, guildId: string, requestId: string, enabled?: boolean): Promise<{ guildMilestonesEnabled: boolean }> {
+    const assertion = this.serviceAssertion(discordId, guildId);
+    try {
+      const response = await fetch(`${this.config.value.coreApiUrl}/api/discord/notification-preferences`, {
+        method: enabled === undefined ? 'GET' : 'PUT',
+        redirect: 'error',
+        signal: AbortSignal.timeout(this.config.value.timeoutMs),
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${assertion}`,
+          'x-request-id': requestId,
+          ...(enabled === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(enabled === undefined ? {} : { body: JSON.stringify({ guildMilestonesEnabled: enabled }) }),
+      });
+      if (!response.ok) throw new CoreApiError('http', response.status);
+      const body: unknown = await response.json();
+      if (!body || typeof body !== 'object' || !('guildMilestonesEnabled' in body) || typeof body.guildMilestonesEnabled !== 'boolean')
+        throw new CoreApiError('invalid-response');
+      return { guildMilestonesEnabled: body.guildMilestonesEnabled };
+    } catch (error) {
+      if (error instanceof CoreApiError) throw error;
+      throw new CoreApiError('unavailable');
+    }
+  }
+
+  async disconnectDiscord(
+    discordId: string,
+    guildId: string,
+    requestId: string,
+  ): Promise<boolean> {
+    const assertion = this.serviceAssertion(discordId, guildId);
+    try {
+      const response = await fetch(
+        `${this.config.value.coreApiUrl}/api/discord/actor`,
+        {
+          method: 'DELETE',
+          redirect: 'error',
+          signal: AbortSignal.timeout(this.config.value.timeoutMs),
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${assertion}`,
+            'x-request-id': requestId,
+          },
+        },
+      );
+      if (!response.ok) throw new CoreApiError('http', response.status);
+      const result: unknown = await response.json();
+      if (!result || typeof result !== 'object' || !('unlinked' in result) || typeof result.unlinked !== 'boolean')
+        throw new CoreApiError('invalid-response');
+      return result.unlinked;
+    } catch (error) {
+      if (error instanceof CoreApiError) throw error;
+      throw new CoreApiError('unavailable');
+    }
+  }
+
   private serviceAssertion(discordId: string, guildId: string): string {
     if (!/^\d{17,20}$/.test(discordId))
       throw new Error('Invalid Discord actor');
@@ -196,4 +339,45 @@ export class CoreApiClient {
       .digest('base64url');
     return `${body}.${signature}`;
   }
+}
+
+function isDiscordProfile(value: unknown): value is DiscordProfile {
+  if (!value || typeof value !== 'object') return false;
+  const profile = value as Record<string, unknown>;
+  const assessment = profile.assessment as Record<string, unknown> | null;
+  const isTextList = (items: unknown) => Array.isArray(items) && items.every((item) => typeof item === 'string');
+  return (
+    (profile.username === null || typeof profile.username === 'string') &&
+    Number.isSafeInteger(profile.xp) &&
+    ['legend', 'hunter', 'builder', 'newcomer'].includes(String(profile.tier)) &&
+    Number.isSafeInteger(profile.bountiesWon) &&
+    typeof profile.bountiesClaimed === 'number' &&
+    Number.isSafeInteger(profile.bountiesClaimed) && profile.bountiesClaimed >= 0 &&
+    Number.isSafeInteger(profile.bountiesCreated) &&
+    Number.isSafeInteger(profile.projectsOwned) &&
+    Number.isSafeInteger(profile.achievementsEarned) &&
+    typeof profile.joinedAt === 'string' &&
+    (profile.github === null ||
+      (typeof profile.github === 'object' &&
+        profile.github !== null &&
+        Number.isSafeInteger((profile.github as Record<string, unknown>).followers) &&
+        Number.isSafeInteger((profile.github as Record<string, unknown>).totalStars) &&
+        Number.isSafeInteger((profile.github as Record<string, unknown>).publicRepos) &&
+        typeof (profile.github as Record<string, unknown>).updatedAt === 'string')) &&
+    (assessment === null ||
+      (typeof assessment === 'object' &&
+        isTextList(assessment.stack) &&
+        isTextList(assessment.specialties) &&
+        (assessment.experience === null || typeof assessment.experience === 'string') &&
+        typeof assessment.updatedAt === 'string')) &&
+    Array.isArray(profile.achievements) &&
+    profile.achievements.every((item: unknown) => {
+      if (!item || typeof item !== 'object') return false;
+      const award = item as Record<string, unknown>;
+      return typeof award.id === 'string' && typeof award.name === 'string' &&
+        typeof award.description === 'string' && Number.isSafeInteger(award.points) &&
+        (award.project === null || typeof award.project === 'string') &&
+        typeof award.deliveredAt === 'string';
+    })
+  );
 }

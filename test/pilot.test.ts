@@ -23,7 +23,7 @@ import {
 } from '../src/config/pilot.config';
 import { DiscordGateway } from '../src/discord/discord.gateway';
 import { DiscordSetupService } from '../src/discord/handlers/discord-setup.service';
-import { CoreApiClient, CoreApiError } from '../src/core/core-api.client';
+import { CoreApiClient, CoreApiError, DiscordProfile } from '../src/core/core-api.client';
 import { pilotCommands } from '../src/discord/command-definitions';
 import {
   makeComponentId,
@@ -67,10 +67,11 @@ test('pilot command catalog excludes legacy reward writers and restricts setup t
   const commands = pilotCommands();
   assert.deepEqual(
     commands.map((c) => c.name),
-    ['ping', 'status', 'connect', 'setup-server'],
+    ['ping', 'status', 'connect', 'disconnect', 'notifications', 'profile', 'achievements', 'bounties', 'issue', 'setup-server'],
   );
+  assert.equal(commands[4].options?.[0]?.name, 'bounty_claims');
   assert.equal(
-    commands[3].default_member_permissions,
+    commands[9].default_member_permissions,
     PermissionFlagsBits.Administrator.toString(),
   );
 });
@@ -82,6 +83,7 @@ function interaction(guildId: string | null, commandName = 'ping') {
     guildId,
     commandName,
     user: { id: '1494937185101545472' },
+    options: { getUser: () => null, getBoolean: (): boolean | null => null },
     deferred: false,
     replied: false,
     isRepliable: () => true,
@@ -92,6 +94,10 @@ function interaction(guildId: string | null, commandName = 'ping') {
     }),
     deferReply: mock.fn(async () => {
       calls.push('defer');
+      value.deferred = true;
+    }),
+    deferUpdate: mock.fn(async () => {
+      calls.push('defer-update');
       value.deferred = true;
     }),
     editReply: mock.fn(async (_content: unknown) => {
@@ -197,6 +203,9 @@ test('slow Core operations acknowledge first; failures can still produce a priva
   );
   await gateway.handleInteraction(input.asInteraction);
   assert.deepEqual(input.calls, ['defer', 'edit']);
+  const message = String((input.value.editReply.mock.calls[0].arguments[0] as { content: string }).content);
+  assert.match(message, /Something went wrong\. Try again in a moment/);
+  assert.doesNotMatch(message, /secret-token/);
 });
 
 test('status distinguishes the running Core container from the integrated checkout', async () => {
@@ -213,9 +222,9 @@ test('status distinguishes the running Core container from the integrated checko
   const message = input.value.editReply.mock.calls[0].arguments[0];
   assert.match(
     String(message),
-    /Core API: reachable \(running Core container\)/,
+    /DevLoot: running an older server version/,
   );
-  assert.match(String(message), /Omnichannel Core changes are not active/);
+  assert.match(String(message), /Account linking and profiles need the updated local DevLoot server/);
 });
 
 test('connect signs the Discord actor and returns only a trusted, opaque web link', async () => {
@@ -273,10 +282,13 @@ test('connect signs the Discord actor and returns only a trusted, opaque web lin
       '/api/discord/actor',
       '/api/discord/link-requests',
     ]);
-    assert.match(
-      String(input.value.editReply.mock.calls[0].arguments[0]),
-      /\/connect\?discord_link=a{43}/,
-    );
+    const reply = input.value.editReply.mock.calls[0].arguments[0] as {
+      content: string;
+      components: { components: { data: { custom_id: string } }[] }[];
+    };
+    assert.match(reply.content, /\/connect\?discord_link=a{43}/);
+    assert.match(reply.content, /Check connection/);
+    assert.equal(reply.components[0].components[0].data.custom_id, 'dl:v1:link:check:1494937185101545472');
 
     globalThis.fetch = async () =>
       Response.json({
@@ -299,6 +311,7 @@ test('connect recognizes an already-linked Discord account without creating a ne
   const input = interaction(TEST_GUILD_ID, 'connect');
   const core = {
     isDiscordLinked: mock.fn(async () => true),
+    discordProfile: mock.fn(async () => ({ username: 'p2arthur' })),
     startDiscordLink: mock.fn(async () => 'http://localhost:5173/connect'),
   };
   const gateway = new DiscordGateway(
@@ -314,8 +327,202 @@ test('connect recognizes an already-linked Discord account without creating a ne
   assert.equal(core.startDiscordLink.mock.callCount(), 0);
   assert.match(
     String(input.value.editReply.mock.calls[0].arguments[0]),
-    /already linked/,
+    /Connected to DevLoot/,
   );
+  assert.match(String(input.value.editReply.mock.calls[0].arguments[0]), /profile\/@p2arthur/);
+});
+
+const linkedProfile: DiscordProfile = {
+  username: 'p2arthur',
+  xp: 750,
+  tier: 'builder',
+  bountiesWon: 0,
+  bountiesClaimed: 0,
+  bountiesCreated: 1,
+  projectsOwned: 2,
+  joinedAt: '2026-09-23T00:00:00.000Z',
+  github: null,
+  assessment: null,
+  achievementsEarned: 0,
+  achievements: [],
+};
+
+test('disconnect unlinks only the invoking Discord account and confirms the result', async () => {
+  const core = { disconnectDiscord: mock.fn(async () => true) };
+  const gateway = new DiscordGateway(
+    {} as Client, config(), {} as DiscordSetupService,
+    core as unknown as CoreApiClient, new PilotComponentRouter(),
+  );
+  const input = interaction(TEST_GUILD_ID, 'disconnect');
+  await gateway.handleInteraction(input.asInteraction);
+  assert.deepEqual(input.calls, ['defer', 'edit']);
+  assert.deepEqual(core.disconnectDiscord.mock.calls[0].arguments, [
+    input.value.user.id, TEST_GUILD_ID, input.value.id,
+  ]);
+  assert.match(String(input.value.editReply.mock.calls[0].arguments[0]), /^Disconnected\./);
+  core.disconnectDiscord.mock.mockImplementation(async () => false);
+  const again = interaction(TEST_GUILD_ID, 'disconnect');
+  await gateway.handleInteraction(again.asInteraction);
+  assert.match(String(again.value.editReply.mock.calls[0].arguments[0]), /already disconnected/);
+});
+
+test('notifications reads and changes only the invoking linked member preference', async () => {
+  const core = {
+    isDiscordLinked: mock.fn(async () => true),
+    discordNotificationPreferences: mock.fn(async () => ({ guildMilestonesEnabled: false })),
+    setDiscordNotificationPreferences: mock.fn(async () => ({ guildMilestonesEnabled: true })),
+  };
+  const gateway = new DiscordGateway(
+    {} as Client, config(), {} as DiscordSetupService,
+    core as unknown as CoreApiClient, new PilotComponentRouter(),
+  );
+  const read = interaction(TEST_GUILD_ID, 'notifications');
+  const readOption = mock.fn(() => null);
+  read.value.options.getBoolean = readOption;
+  await gateway.handleInteraction(read.asInteraction);
+  assert.deepEqual(readOption.mock.calls[0].arguments, ['bounty_claims']);
+  assert.deepEqual(read.calls, ['defer', 'edit']);
+  assert.deepEqual(core.discordNotificationPreferences.mock.calls[0].arguments, [read.value.user.id, TEST_GUILD_ID, read.value.id]);
+  assert.match(String(read.value.editReply.mock.calls[0].arguments[0]), /Bounty claim posts: Off/);
+  const change = interaction(TEST_GUILD_ID, 'notifications');
+  const changeOption = mock.fn(() => true);
+  change.value.options.getBoolean = changeOption;
+  await gateway.handleInteraction(change.asInteraction);
+  assert.deepEqual(changeOption.mock.calls[0].arguments, ['bounty_claims']);
+  assert.deepEqual(core.setDiscordNotificationPreferences.mock.calls[0].arguments, [change.value.user.id, TEST_GUILD_ID, true, change.value.id]);
+  assert.match(String(change.value.editReply.mock.calls[0].arguments[0]), /Saved\. Bounty claim posts are on/);
+  assert.match(String(change.value.editReply.mock.calls[0].arguments[0]), /does not post a message/);
+  assert.doesNotMatch(String(change.value.editReply.mock.calls[0].arguments[0]), /opt in/);
+  core.discordNotificationPreferences.mock.mockImplementation(async () => ({ guildMilestonesEnabled: true }));
+  const readOn = interaction(TEST_GUILD_ID, 'notifications');
+  await gateway.handleInteraction(readOn.asInteraction);
+  assert.match(String(readOn.value.editReply.mock.calls[0].arguments[0]), /Bounty claim posts: On/);
+  core.setDiscordNotificationPreferences.mock.mockImplementation(async () => ({ guildMilestonesEnabled: false }));
+  const turnOff = interaction(TEST_GUILD_ID, 'notifications');
+  turnOff.value.options.getBoolean = () => false;
+  await gateway.handleInteraction(turnOff.asInteraction);
+  assert.match(String(turnOff.value.editReply.mock.calls[0].arguments[0]), /Saved\. Bounty claim posts are off/);
+});
+
+test('notifications explains how to connect before changing a setting', async () => {
+  const core = {
+    isDiscordLinked: mock.fn(async () => false),
+    discordNotificationPreferences: mock.fn(async () => ({ guildMilestonesEnabled: false })),
+  };
+  const gateway = new DiscordGateway(
+    {} as Client, config(), {} as DiscordSetupService,
+    core as unknown as CoreApiClient, new PilotComponentRouter(),
+  );
+  const input = interaction(TEST_GUILD_ID, 'notifications');
+  await gateway.handleInteraction(input.asInteraction);
+  assert.match(String(input.value.editReply.mock.calls[0].arguments[0]), /Connect your Discord account first with \/connect/);
+  assert.equal(core.discordNotificationPreferences.mock.callCount(), 0);
+});
+
+test('profile and achievements read Core facts and keep the default response private', async () => {
+  const core = { discordProfile: mock.fn(async () => linkedProfile) };
+  const gateway = new DiscordGateway(
+    {} as Client, config(), {} as DiscordSetupService,
+    core as unknown as CoreApiClient, new PilotComponentRouter(),
+  );
+  const profile = interaction(TEST_GUILD_ID, 'profile');
+  await gateway.handleInteraction(profile.asInteraction);
+  assert.deepEqual(profile.calls, ['defer', 'edit']);
+  assert.equal(profile.calls[0], 'defer');
+  const card = profile.value.editReply.mock.calls[0].arguments[0] as {
+    embeds: { data: { url: string; fields: { name: string; value: string }[] } }[];
+    files: unknown[];
+    components: unknown[];
+  };
+  assert.equal(card.embeds[0].data.url, 'http://localhost:5173/profile/@p2arthur');
+  assert.deepEqual(card.embeds[0].data.fields.map((field) => field.name), [
+    'DevLoot tier', 'XP', 'Bounties won', 'Bounties claimed', 'Bounties created', 'Projects', 'Achievements earned',
+  ]);
+  assert.equal(card.files.length, 1);
+  assert.equal(card.components.length, 1);
+  const achievements = interaction(TEST_GUILD_ID, 'achievements');
+  await gateway.handleInteraction(achievements.asInteraction);
+  assert.match(String(achievements.value.editReply.mock.calls[0].arguments[0]), /no achievements on DevLoot/);
+  assert.doesNotMatch(String(achievements.value.editReply.mock.calls[0].arguments[0]), /wallet/i);
+});
+
+test('profile share requires the owner and rechecks Core before posting publicly', async () => {
+  const core = { discordProfile: mock.fn(async () => linkedProfile) };
+  const gateway = new DiscordGateway(
+    {} as Client, config(), {} as DiscordSetupService,
+    core as unknown as CoreApiClient, new PilotComponentRouter(),
+  );
+  const other = interaction(TEST_GUILD_ID);
+  Object.assign(other.value, {
+    customId: 'dl:v1:profile:share:1494937185101545000',
+    isChatInputCommand: () => false,
+    isButton: () => true,
+  });
+  await gateway.handleInteraction(other.asInteraction);
+  assert.equal(other.value.reply.mock.callCount(), 1);
+  assert.equal(core.discordProfile.mock.callCount(), 0);
+  const own = interaction(TEST_GUILD_ID);
+  Object.assign(own.value, {
+    customId: 'dl:v1:profile:share:1494937185101545472',
+    isChatInputCommand: () => false,
+    isButton: () => true,
+  });
+  await gateway.handleInteraction(own.asInteraction);
+  assert.deepEqual(own.calls, ['defer', 'edit']);
+  assert.equal(own.value.deferReply.mock.calls[0].arguments.length, 0);
+  assert.equal(core.discordProfile.mock.callCount(), 1);
+});
+
+test('private and explicitly shared profiles keep native facts and visual sections', async () => {
+  const visualProfile: DiscordProfile = {
+    ...linkedProfile,
+    bountiesClaimed: 1,
+    github: { publicRepos: 12, totalStars: 31, followers: 7, updatedAt: '2026-09-23T00:00:00.000Z' },
+    achievementsEarned: 1,
+    achievements: [{ id: 'award-1', name: 'Pioneer', description: 'Early builder', points: 100, project: 'DevLoot', deliveredAt: '2026-09-22T00:00:00Z' }],
+    assessment: {
+      stack: ['TypeScript', 'React', 'Other <stack & tools>'],
+      specialties: ['Backend'],
+      experience: 'Experienced',
+      updatedAt: '2026-09-23T00:00:00.000Z',
+    },
+  };
+  const core = { discordProfile: mock.fn(async () => visualProfile) };
+  const gateway = new DiscordGateway(
+    {} as Client, config(), {} as DiscordSetupService,
+    core as unknown as CoreApiClient, new PilotComponentRouter(),
+  );
+  const profile = interaction(TEST_GUILD_ID, 'profile');
+  await gateway.handleInteraction(profile.asInteraction);
+  const privateCard = profile.value.editReply.mock.calls[0].arguments[0] as {
+    embeds: { data: { image: { url: string }; fields: { name: string; value: string }[] } }[];
+    files: { attachment: Buffer; name: string; description: string }[];
+  };
+  assert.equal(privateCard.embeds[0].data.image.url, 'attachment://devloot-profile-sections.png');
+  assert.equal(privateCard.files[0].name, 'devloot-profile-sections.png');
+  assert.equal(privateCard.files[0].attachment.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.match(privateCard.files[0].description, /First bounty claim: complete/);
+  assert.equal(privateCard.embeds[0].data.fields.find((field) => field.name === 'Bounties claimed')?.value, '1');
+  assert.deepEqual(privateCard.embeds[0].data.fields.slice(-3).map((field) => field.name), ['GitHub repos', 'GitHub stars', 'Followers']);
+  assert.doesNotMatch(privateCard.embeds[0].data.fields.map((field) => field.name).join(' '), /wallet|assessment|stack/i);
+  assert.match(privateCard.files[0].description, /TypeScript, React/);
+  assert.match(privateCard.files[0].description, /Pioneer/);
+
+  const share = interaction(TEST_GUILD_ID);
+  Object.assign(share.value, {
+    customId: 'dl:v1:profile:share:1494937185101545472',
+    isChatInputCommand: () => false,
+    isButton: () => true,
+  });
+  await gateway.handleInteraction(share.asInteraction);
+  const publicCard = share.value.editReply.mock.calls[0].arguments[0] as {
+    embeds: { data: { image: { url: string } } }[];
+    files: { attachment: Buffer }[];
+    allowedMentions: { parse: string[] };
+  };
+  assert.equal(publicCard.embeds[0].data.image.url, 'attachment://devloot-profile-sections.png');
+  assert.equal(publicCard.files[0].attachment.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.deepEqual(publicCard.allowedMentions, { parse: [] });
 });
 
 test('ordinary startup registers no commands, performs no setup and destroys gateway on shutdown', async () => {
@@ -503,6 +710,30 @@ test('Core client enforces bounded reads, no redirects or writes and redacts fai
   }
 });
 
+test('notification preferences use a signed actor request and bounded opt-in update', async () => {
+  const original = globalThis.fetch;
+  try {
+    const requests: { url: string; init: RequestInit }[] = [];
+    globalThis.fetch = mock.fn(async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      return new Response(JSON.stringify({ guildMilestonesEnabled: init.method === 'PUT' }), { status: 200 });
+    }) as typeof fetch;
+    const core = new CoreApiClient(config());
+    const discordId = '1484039275275358228';
+    assert.deepEqual(await core.discordNotificationPreferences(discordId, TEST_GUILD_ID, 'read-pref'), { guildMilestonesEnabled: false });
+    assert.deepEqual(await core.setDiscordNotificationPreferences(discordId, TEST_GUILD_ID, true, 'write-pref'), { guildMilestonesEnabled: true });
+    assert.deepEqual(requests.map(({ url, init }) => [new URL(url).pathname, init.method]), [
+      ['/api/discord/notification-preferences', 'GET'],
+      ['/api/discord/notification-preferences', 'PUT'],
+    ]);
+    assert.equal(requests[1].init.body, JSON.stringify({ guildMilestonesEnabled: true }));
+    assert.equal((requests[1].init.headers as Record<string, string>)['x-request-id'], 'write-pref');
+    assert.match((requests[1].init.headers as Record<string, string>).authorization, /^Bearer /);
+    await assert.rejects(core.setDiscordNotificationPreferences(discordId, 'other-guild', true, 'bad-pref'));
+    assert.equal(requests.length, 2);
+  } finally { globalThis.fetch = original; }
+});
+
 test('Core probe accepts the existing container root only after /health returns 404', async () => {
   const original = globalThis.fetch;
   try {
@@ -520,7 +751,8 @@ test('Core probe accepts the existing container root only after /health returns 
     }) as typeof fetch;
     const core = new CoreApiClient(config());
     assert.equal(await core.probe('probe-request'), 'existing');
-    assert.deepEqual(paths, ['/health', '/']);
+    assert.equal(await core.isHealthy('probe-request'), false);
+    assert.deepEqual(paths, ['/health', '/', '/health', '/']);
 
     globalThis.fetch = async () => new Response('Not Found', { status: 500 });
     assert.equal(await core.probe('probe-request'), 'unavailable');

@@ -15,7 +15,7 @@ type ButtonHandler = (
 const COMPONENT_ID =
   /^dl:v1:([a-z][a-z0-9-]{0,31}):([a-z][a-z0-9-]{0,31}):([A-Za-z0-9_-]{1,80})$/;
 const STALE_MESSAGE =
-  'This action is no longer available. Run a current slash command.';
+  'This button has expired. Run the command again to get a new one.';
 
 export function parseComponentId(customId: string): ComponentRoute | null {
   if (customId.length > 100) return null;
