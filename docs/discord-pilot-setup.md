@@ -1,20 +1,23 @@
 # Discord development pilot
 
-Implementation started 2026-09-23. This is the first P00/P01 slice of the omnichannel plan, not a complete Pilot A rollout.
+Implementation started 2026-09-23. The local development pilot has account linking, profile and bounty discovery, and the P07 notification delivery path. The [P08 first-claim milestone](discord-p08-milestone.md) completed its live demo on 2026-09-30: one claim, one base XP award, one entitlement, one delivered announcement, and replay/restart invariance. After the original omnichannel Core worktree was deleted, the P05-P08 implementation was recovered into ../devloot-core-omnichannel-recover3; both LaunchAgents point there.
 
 - Bot branch: `codex/discord-omnichannel-pilot`.
 - Core branch: `codex/discord-omnichannel-engine`, in the sibling `devloot-core-omnichannel` worktree.
 - Core combines `066d18f` (current profile/Dream Team work) with `origin/feat/data-engine` through `8c13a82` in integration commit `8825ef2`.
 - Only guild `1494925337811751002` is accepted. Configuration, gateway input, setup and command deployment enforce this.
-- Live development setup is complete: the dedicated bot identity and sole test-guild membership were verified, channels/role provisioned, and three guild commands deployed. Credentials are stored only in the ignored local `.env`. The gateway is running locally on port 3011; the current Core container still lacks the integrated branch health endpoint.
+- Live development setup is complete: the dedicated bot identity and sole test-guild membership were verified, and channels/role provisioned. Credentials are stored only in the ignored local `.env`. The bot runs locally on port 3011 against the integrated Core API on port 3012 and web client on port 5173.
+- On this Mac, `~/Library/LaunchAgents/com.devloot.omnichannel-core-api.plist` keeps the integrated Core API on port 3012 running after terminal sessions close. It uses the integration checkout's ignored `server/.env` and compiled `dist/src/main.js`. After rebuilding Core, run `launchctl kickstart -k gui/$(id -u)/com.devloot.omnichannel-core-api` to load the new build. Logs are in `~/Library/Logs/devloot-omnichannel-core-api*.log`. The separate Docker Core container on port 3000 does not provide the Discord integration endpoints; do not point this bot at it.
 
 ## What runs now
 
-The pilot registers `/ping`, `/status` and administrator-only `/setup-server`. All responses are private. `/status` checks the integrated Core branch's new `GET /health` API liveness endpoint. The bot's `GET /health` is process liveness; `GET /health/ready` requires a ready Discord connection, test-guild membership and a reachable Core API. It does not claim database or worker health.
+The pilot registers `/ping`, `/status`, `/connect`, `/disconnect`, `/notifications`, `/profile [member]`, `/achievements [member]` and administrator-only `/setup-server`. Commands reply privately; a profile is posted publicly only after its owner presses **Share profile**. `/status` checks the integrated Core branch's `GET /health` API liveness endpoint. The bot's `GET /health` is process liveness; `GET /health/ready` requires a ready Discord connection, test-guild membership and the integrated Core API. It does not claim database or worker health. The [local linking guide](discord-linking-local.md) gives command-by-command expectations.
+
+P07 first-bounty-claim announcements are opt-in. `/notifications` shows the current setting, and `/notifications bounty_claims:true` enables an announcement of the member's first verified bounty claim in the development `#bounty-claims` channel. Core's ignored local `.env` needs `DISCORD_MILESTONE_CHANNEL_ID` set to that channel's ID. No direct messages are enabled. The P08 rule is active for future confirmed claims; opting in alone does not post a message.
 
 Process startup verifies the bot identity and test-only guild membership, connects with just the Guilds intent and installs interaction handlers. It does not register commands, create channels, post onboarding, start legacy jobs or access a database. The Docker startup no longer runs migrations. Core owns business migrations.
 
-Legacy command/service source is retained but is not wired into this test application. Production should continue using its existing branch/deployment. Linking, profiles, discovery, engine rewards, feeds, missions and moderation are not yet enabled. Versioned `dl:v1:<feature>:<action>:<entityId>` buttons enter a registry of explicitly installed handlers; legacy, malformed, and unregistered buttons receive a private stale-action response. No domain button handlers are installed yet. The Core client currently permits public reads only, with a timeout and redirects disabled; P02 must implement service authentication before any channel mutation.
+Legacy command/service source is retained but is not wired into this test application. Production should continue using its existing branch/deployment. Legacy reward writes, feeds, missions and moderation are not enabled. Versioned `dl:v1:<feature>:<action>:<entityId>` buttons enter a registry of explicitly installed handlers; legacy, malformed, and unregistered buttons receive a private stale-action response. The Core client uses signed, short-lived, actor-bound assertions for linking, profiles and unlink; requests have a timeout and redirects disabled.
 
 ## Local configuration
 
@@ -47,7 +50,7 @@ npm run start:prod
 Setup creates only these missing items:
 
 - DevLoot Test Moderator role, with no server-wide permissions.
-- `#onboarding` for commands, `#opportunities`, `#shipped`, `#missions`.
+- `#onboarding` for commands, `#opportunities`, `#bounty-claims`, `#missions`.
 - Private `#moderator-review`, visible to the bot, configured moderator role and server administrators.
 
 Setup does not post messages, assign roles, delete channels, edit existing channels or reorganize the server. Existing suitable channels can be reused by explicitly mapping their IDs after inventory. Same-name collisions stop setup before writes; names alone never establish ownership. Mapped destinations are fetched from the allowed guild and checked for type, bot access and moderator privacy.
@@ -74,7 +77,7 @@ Example mapping shape (replace placeholders with actual inventory IDs):
 
 After setup: run `/ping`, `/status`, `/setup-server` (preview) and `/setup-server apply:true` (should reuse everything), restart the bot, and verify no new public content or duplicate channels. Assign the test moderator role explicitly to intended testers and check its private-channel visibility. Live CLI preview/apply, command registration, `/ping`, `/status` and gateway restart checks are complete. Moderator role assignment to individual testers and admin slash-command testing remain pending; the role was deliberately created without assigning members.
 
-## Validation performed
+## Initial P00/P01 validation (historical)
 
 - Bot build, TypeScript check and 13 tests pass. Tests cover configuration, identity mismatch/shared bots, guild/DM rejection, versioned button routing, deferred replies, lifecycle, setup restart/idempotency, private review permissions, collision handling, Core failure handling and complete Nest health/readiness behavior without Prisma.
 - Core server build and `architecture:verify` pass. Prisma is removed from engine domain/port contracts; issue snapshot reads and achievement claims cross module boundaries through exported ports.
@@ -82,7 +85,7 @@ After setup: run `/ping`, `/status`, `/setup-server` (preview) and `/setup-serve
 - Web: TypeScript check and 3 relevant suites / 8 tests pass, including engine admin tabs and bounty-board navigation.
 - All 47 combined migrations applied successfully to an empty disposable PostgreSQL database. The prior 46-migration database upgraded with the new backfill migration; the test user retained 137 XP and migration status was current. The refreshed engine's 28 suites / 116 tests and updated admin trackables 7 tests pass.
 
-The upstream engine's passing tests do not establish replay/concurrency-safe awards. No new reward rules have been activated and no shared database was migrated. The bot is running locally; no hosted deployment was made. Next: connect the integrated Core test runtime, then P02 secure Discord linking/service authentication; P05/P06 reliability work remains required before enabling engine rewards.
+The upstream engine's passing tests do not establish replay/concurrency-safe awards. No new reward rules have been activated and no shared database was migrated. The bot is running locally; no hosted deployment was made. The integrated Core runtime and P02/P03 slices were completed afterward; P05/P06 reliability work remains required before enabling engine rewards.
 
 Discord's [guild command documentation](https://docs.discord.com/developers/docs/interactions/slash-commands) describes the application/guild command route used by the explicit deploy script.
 
@@ -103,12 +106,12 @@ The ignored local `.env` now contains the application ID, and `.discord/14949253
 
 The portal has Public Bot and all three privileged intents enabled. These were left unchanged; the new gateway requests only Guilds. Existing-token retrieval is unavailable: Discord offers only Reset Token. Supply an existing saved token via the local environment file, or have the application owner regenerate it and save it as `DISCORD_BOT_TOKEN`. Credential reset is a user-performed browser handoff. Never paste the token in chat.
 
-## Live setup completed (2026-09-23)
+## Initial live setup (2026-09-23; historical)
 
 - Authenticated bot ID: `1494937185101545472`; guild inventory confirmed this bot is installed only in `1494925337811751002`.
 - Reused the verify channel for onboarding and bounty-feed channel for opportunities.
 - Created `DevLoot Test Moderator`: `1552403885195264090`. No individual member assignments were made.
-- Created `#shipped`: `1552403886067679282`; `#missions`: `1552403886986235924`; private `#moderator-review`: `1552403888047390891`.
+- Created `#shipped` (later renamed `#bounty-claims`): `1552403886067679282`; `#missions`: `1552403886986235924`; private `#moderator-review`: `1552403888047390891`.
 - Registered `/ping`, `/status`, `/setup-server` against this application and guild only. Existing commands belonging to the other bot were not changed.
 - Repeated setup preview reports reuse for every item; the private-review permissions were fetched and validated.
 - Started the compiled gateway locally on port **3011** because 3001 belongs to the JEV project and 3002 is also occupied. PID is in ignored `.discord/gateway.pid`; logs are in `.discord/gateway.log`. This is a local background process, not a hosted service or reboot-persistent installation.

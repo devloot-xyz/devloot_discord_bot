@@ -1,8 +1,8 @@
 # Discord omnichannel implementation plan
 
-2026-09-23 · Test guild: **`1494925337811751002`** · Status: P00 integrated; P01 development guild live locally; no hosted deployment.
+2026-09-23 · Test guild: **`1494925337811751002`** · Status: ready to implement, no deployment performed.
 
-Builds on the [product/architecture plan](discord-omnichannel-plan.md) and [committed Core/data-engine review](discord-data-engine-review.md). Current baselines: bot pilot branch `codex/discord-omnichannel-pilot` and Core integration checkout `8825ef2` containing `origin/feat/data-engine` through `8c13a82`. The integration now includes the event bridge, catalog controls and backfill commits. P05/P06 still need durable ingestion and reward safety before those features are enabled.
+Builds on the [product/architecture plan](discord-omnichannel-plan.md) and [committed Core/data-engine review](discord-data-engine-review.md). Reviewed baselines: bot pilot `6c01905`, Core integration checkout `b85f67a` (containing engine `4f890b3`), and updated `origin/feat/data-engine` `8c13a82`. The integration checkout does **not** yet contain the new event bridge or backfill commits. Refresh these refs before implementation and incorporate upstream fixes rather than reimplementing them.
 
 ## Outcome and release boundaries
 
@@ -12,7 +12,7 @@ Builds on the [product/architecture plan](discord-omnichannel-plan.md) and [comm
 
 **Pilot C:** contribution quests, relevant digests, and server-persisted Dream Team missions support repeat participation. JEV moderation runs as a parallel shadow/review track.
 
-Production rollout follows these pilots and their exit checks. The development guild was provisioned and verified for the P01 pilot in [the setup record](discord-pilot-setup.md); no Core test runtime or hosted bot service has been deployed.
+Production rollout follows these pilots and their exit checks. This plan does not provision channels, send messages, merge branches or deploy services by itself. The guild ID identifies the intended test destination; bot membership, permissions, channel IDs and credentials must still be verified during setup.
 
 ## Implementation decisions
 
@@ -71,9 +71,9 @@ Each row is a PR-sized target where practical; schema/behavior changes may need 
 
 Parallel work means separate owners/checkouts, not concurrent edits to shared files. Resolve ownership of Prisma migrations and API/module composition first. Pilot A is P01–P04; P00/P05–P07 can progress alongside it. Pilot B is P08. P09–P12 form Pilot C; moderation need not block any engagement release.
 
-### P00 — Integrate the reviewed Core work (complete in `8825ef2`)
+### P00 — Integrate the reviewed Core work
 
-- Refresh the existing isolated `codex/discord-omnichannel-engine` integration checkout with the engine commits after `4f890b3` through `8c13a82` after checking for overlapping work. Do not modify the cofounder's feature branch or overwrite unrelated working changes.
+- Refresh the existing isolated `codex/discord-omnichannel-engine` integration checkout with the new `4b0f359..8c13a82` engine commits after checking for overlapping work. Do not modify the cofounder's feature branch or overwrite unrelated working changes.
 - Reconcile Prisma schema/migrations, API and worker module imports, issue DTOs, GitHub adapters and frontend API services. Regenerate the client in the integration checkout and test clean plus existing-database migration paths.
 - Replace cross-feature application imports with exported ports where required by current architecture enforcement, including engine snapshot reads and achievement integration.
 - Preserve the catalog-sourced/custom trackable distinction and guarded admin controls. Record three contracts: canonical actor/entity IDs, versioned accepted-fact envelope, and execution/action/delivery idempotency keys. Keep engine control endpoints admin-only.
@@ -83,7 +83,7 @@ Parallel work means separate owners/checkouts, not concurrent edits to shared fi
 
 Primary files: bot `src/discord/discord.gateway.ts`, `discord.module.ts`, `services/command-dispatcher.service.ts`, `handlers/discord-setup.service.ts`, `services/welcome.service.ts`, `src/main.ts`, `package.json` and deployment config.
 
-- Add typed configuration and guild/destination checks. Separate command definitions from registration; use the implemented `commands:deploy:test` and `test`/`test:unit` scripts.
+- Add typed configuration and guild/destination checks. Separate command definitions from registration; add proposed `commands:deploy:test` and `test`/`test:unit` scripts (these do not exist today).
 - Acknowledge long interactions before I/O; use request IDs and structured, redacted error logs. Handle shutdown, restart and failed Core calls without losing the ability to reply gracefully.
 - Add a versioned button router. Persist domain workflow state in Core; do not depend on process-local collectors for long-lived mission/feed buttons. Modal paths respond with the modal first, then authorize/validate submitted input.
 - Add health/readiness for gateway and Core connectivity; no automatic channel setup on restart.
@@ -156,12 +156,16 @@ Primary Core owners: `modules/engine/{ports,application,infrastructure}`, produc
 
 Use **first bounty claimed** as the first authoritative milestone because Core already provides that outcome. Do not label a paid claim as a generic PR merge; broader non-bounty contribution signals come later.
 
+Read-only pilot slice (2026-09-24): Core's Discord profile read now exposes `bountiesClaimed` from the versioned user-keyed engine snapshot, and `/profile` renders first-claim progress/completion with that count. This gives linked members a visible P05-backed milestone without activating a rule or sending a new message. The once-only rule, base-XP migration, entitlement, notification delivery, and replay/restart demo remain P06–P08 work.
+
 - Map the confirmed outcome to a canonical user's claim count. Seed one reviewed once-only milestone rule in the test environment.
 - Reuse the newly cataloged `bounty.claimed.count` signal after P05 has durable acceptance and a canonical recipient. Do not treat the current wallet-keyed mapping as sufficient for walletless linked users.
 - Preserve existing base claim XP exactly once through the migrated P06 award path. The milestone initially adds recognition/earned entitlement and notifications; extra milestone XP remains off until its policy is explicitly configured. Do not duplicate the existing base award in an engine rule.
 - Trigger a test outcome through a domain integration fixture or dedicated test-repository/test-network flow. Fixtures must be environment-guarded and unavailable in production.
 - Check the result in Core and Discord, replay the event and retry delivery, restart workers, and repeat the checks.
 - **Done:** one canonical outcome, one intended base award, one milestone execution, recoverable channel deliveries, and consistent web/Discord progress. Record this as the first end-to-end pilot demo.
+
+P08 complete (2026-09-30): The live demo passed. A dedicated, environment-guarded test bounty was claimed through the domain reconciliation path by the verified, opted-in member; the persistent worker awarded exactly one 200 XP base award, granted the entitlement, and delivered one milestone announcement (recorded message ID). Replaying the accepted fact and restarting the worker left every count and the message ID unchanged, and web/Discord progress both read 1 — the first end-to-end Pilot B demo. The original Core worktree had been deleted with the P05–P08 changes uncommitted; the implementation was recovered from session transcripts into `../devloot-core-omnichannel-recover3` (both LaunchAgents repointed) and remains uncommitted — see the [P08 milestone record](discord-p08-milestone.md) before further worktree operations.
 
 ### P09 — Scheduled engagement and digests
 
@@ -249,13 +253,13 @@ Observability uses request/journey, business-event, engine execution/action and 
 ## Cutover and rollback rules
 
 - Maintain a per-capability writer map: legacy bot, existing Core subscriber, or engine-triggered Core use case. Exactly one produces each business reward during cutover.
-- Backfill opening balances and metrics without firing historical rewards by default. Snapshot replacement must have a watermark or paused-producer boundary, followed by a catch-up of accepted facts.
-- Roll back a feature by disabling its commands, rules and deliveries while keeping the newer storage contract readable. Do not restore an old XP writer after ledger activity without reconciliation.
+- Backfill opening balances and metrics without firing historical rewards by default. Snapshot replacement must have a watermark or paused-producer boundary.
+- Rollback a feature by disabling its commands/rules/deliveries and keeping the newer storage contract readable. Do not restore an old XP writer after ledger activity without reconciliation.
 - Preserve existing unrelated bot functionality until each migration slice is accepted. Remove direct database access and startup migration execution after the last dependent feature moves.
-- Review production configuration separately from test configuration. Production launch and server changes require separate implementation work.
+- Review production configuration separately from test configuration. Production launch and any server changes are implementation actions, not effects of writing this plan.
 
 ## Immediate starting order
 
-**Finish P01, then P02–P04 for Pilot A while P05–P07 prepare Pilot B.** P00 now includes engine `8c13a82`. The first demo is a linked developer's real profile and an actionable issue card inside guild `1494925337811751002`. The second demo reuses the new bounty-claim catalog signal after durable ingestion and reward safety are proven. Dream Team and moderation build on those same identities, contracts and delivery paths.
+**Start P00 and P01, then P02–P04 for Pilot A while P05–P07 prepare Pilot B.** The first demo is a linked developer's real profile and an actionable issue card inside guild `1494925337811751002`. The second demo proves a contribution and its recognition survive retries across Core and Discord. Dream Team and moderation build on those same identities, contracts and delivery paths.
 
-Remaining preflight: test Core/web runtime URLs, test database and GitHub repository, OAuth callback configuration, and a moderator for later evaluation. The test application identity, bot membership, permissions and guild destinations are verified. Store credentials in the existing secret-management mechanism rather than task messages or committed files.
+Preflight items to resolve during setup, not reasons to delay coding: test application identity/token, bot membership and exact permissions in the supplied guild, test Core/web URLs, test database and GitHub repository, OAuth callback configuration, and a moderator for later evaluation. Store credentials in the existing secret-management mechanism rather than task messages or committed files.

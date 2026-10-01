@@ -2,21 +2,17 @@
 
 Planning proposal · 2026-09-23 · primary outcome: meaningful developer contributions and repeat participation.
 
-Updated after reviewing committed Core `066d18f` and fetched `feat/data-engine` at `4f890b3`. See the [engine integration review](discord-data-engine-review.md) for the implemented/planned split, reliability prerequisites, and revised implementation sequence.
-
-Execution details are in the [implementation plan](discord-implementation-plan.md), with work packages and acceptance checks for test guild `1494925337811751002`.
-
 ## Recommendation
 
 Make Discord the place where developers discover work, find collaborators, and celebrate progress, with DevLoot Core owning the underlying identity and work. The first release should connect **profile → fitting issue → contribution → recognition → next visit**. Dream Team and JEV moderation follow through the same Core capabilities.
 
-Keep this bot repository as a thin, separately deployed Discord gateway for now. Move shared business decisions into Core incrementally, using its existing feature modules, ports, PostgreSQL, and pg-boss workers. Adopt the data engine as the shared metrics and configurable reward-rule layer once its reliability prerequisites are met. Keep domain authorization, notification delivery, and moderation decisions in their respective owners. Repository consolidation is optional later; a new event broker or generic channel framework is unnecessary for this pilot.
+Keep this bot repository as a thin, separately deployed Discord gateway for now. Move shared business decisions into Core incrementally, using its existing feature modules, ports, PostgreSQL, and pg-boss workers. Repository consolidation is optional later; a new event broker or generic channel framework is unnecessary for this pilot.
 
 “10 times more engaging” is a product ambition, not an impact forecast. Measure contribution and return behavior before choosing a numerical growth target.
 
 ## What the code actually supports
 
-Inspection covered the bot at `588dc0d`, committed Core `066d18f`, and `origin/feat/data-engine` at `4f890b3`. Profile judgments and real-profile matching are now committed. The engine branch and current Core branch diverge and require integration; their capabilities are not all present in a single checkout. “Exists” below means present in source, not verified deployed or production-ready. No live Discord activity, production configuration, database contents, or usage analytics were inspected.
+Inspection covered the bot at `588dc0d` and the Core working tree based on `28e5ce3`. Core contains substantial uncommitted work, including profile judgments and matching. “Exists” below means present in source, not verified deployed or production-ready. No live Discord activity, production configuration, database contents, or usage analytics were inspected.
 
 | Capability | Evidence and current behavior | Reuse assessment |
 |---|---|---|
@@ -24,16 +20,14 @@ Inspection covered the bot at `588dc0d`, committed Core `066d18f`, and `origin/f
 | Quests | One hardcoded quest, awarded for posting in a particular channel; dispatcher also calls completion after `/propose` | UI shell exists; meaningful contribution validation is new |
 | Bot feeds | Rich bounty/project notification methods exist but no call sites were found in this standalone bot | Reuse presentation ideas; do not assume this is the active event pipeline |
 | Core Discord integration | `platform/discord/DiscordClient`, `NotifierPort`, bounty notification jobs, XP event subscriber and role-sync worker | Strong foundation; currently plain bounty-feed messages and single-guild configuration |
-| Profiles | Wallet-based profile counts; committed persisted AI profile judgments by GitHub username, ranking and contributor matching | Read-only profile cards are a strong early feature; identity aggregation and deployment validation remain |
+| Profiles | Wallet-based profile counts; persisted AI profile judgments by GitHub username; ranking and contributor matching in current worktree | Read-only profile cards are a strong early feature; identity aggregation and deployment validation remain |
 | Achievements | Public project/wallet achievement reads and authenticated claim flows | Show existing earned achievements first; new achievement types have their own eligibility work |
 | Feed | `GetRecentFeedUseCase` combines newly created bounties and projects | No general activity stream, preferences, or personalized issue ranking yet |
-| Dream Team | Issue drafting/judging, subtasks and team recommendations now use stored developer profiles via `PROFILE_RANKING` | Real candidate matching exists. Assignment use case supports real usernames, but the HTTP assignment endpoint remains disabled; draft workspace persistence is browser IndexedDB |
+| Dream Team | Issue drafting/judging, subtask drafting/creation, team suggestions and invitation-email drafting | Current team suggestions use 100 simulated specialists; assignment endpoint explicitly refuses simulated assignment |
 | Real contributor matching | `MatchContributorsForIssueUseCase` evaluates stored generated profiles against an issue | Useful starting point, but not opt-in availability, team membership, invitations, or issue recommendations for one developer |
 | Native notifications | Preferences and delivery outbox for bounty-created mobile push | Reuse patterns; existing outbox is tied to push devices, not a universal notification outbox |
 | JEV | `TypeSafeClient.systemOne`, typed choice/score judgments, existing domain-specific judgment ports | Transport and judgment pattern reusable; moderation taxonomy and accuracy are unproven |
 | Community moderation | Report, hide, restore, dismiss, permission checks, transaction and audit trail for project comments | Reuse policy/audit concepts; Discord messages have different actions and permissions |
-| Data engine, separate branch | Trackable ledger/snapshots, reactive/scheduled rules, XP/achievement executors, admin UI; issue votes are its only wired production producer | Reuse this for configurable engagement rules; event bridge/backfill are documented but not implemented at the reviewed commit |
-| Issue engagement, engine branch | Issue votes, comment ownership/upvotes and GitHub timeline APIs/UI | Useful for shared web/Discord issue cards; timeline reads are not a durable activity feed |
 
 Source pointers are collected at the end of this document.
 
@@ -52,7 +46,7 @@ Effort below describes incremental work after the shared identity and API founda
 | 1 | **Builder passport** — `/profile`, `/profile @member`, `/achievements`; stack, specialties, contributions, tier, earned badges; Share button | Core profile and achievement reads; add authorized Discord-to-Core identity resolution and a public-safe combined projection. AI information is optional and labeled | S–M |
 | 2 | **Opportunity board** — `/bounties` with language/project filters and one clear next action | Core bounty/project/issue reads; add compact cards and filters. Start curated/rule-based, then add `/match me` with measured relevance | S for browse, M for personalized ranking |
 | 3 | **Useful feeds** — new work, shipping wins, project spotlight, weekly recap | Existing bounty events and feed reads; new delivery preferences, topic routing, and explicit events for anything not already represented | M |
-| 4 | **My next contribution** — improve `/daily` and `/quests` to show progress and one useful task | Reuse daily/streak presentation plus engine trackables/rules. Add verified completion producers, reward idempotency and progress reads | M |
+| 4 | **My next contribution** — improve `/daily` and `/quests` to show progress and one useful task | Reuse daily/streak presentation. New Core-owned completion rules tied to persisted evidence and idempotent XP | M |
 | 5 | **Party up** — `/squad find`, interest buttons, a small issue-centered working group | Reuse real profile matching and thread UI. Availability, invitations, acceptance, membership, and progress are new state | M–L |
 | 6 | **Dream Team brief** — `/dreamteam plan <issue>` returns proposed subtasks and required specialties | Reuse issue/subtask judgment and drafting; keep premium and maintainer permissions. Preview first, reviewed GitHub writes later | M for preview; L for full lifecycle |
 | 7 | **JEV moderation assistant** — classify reports, propose actions, help maintain a welcoming developer space | Reuse TypeSafe transport and community audit patterns; add Discord moderation module, review UI and evaluation | M for shadow/review mode |
@@ -72,7 +66,7 @@ Later: followed-project milestones, requests for review, and personally relevant
 
 **First: a planning companion.** A maintainer brings an issue; DevLoot drafts a work breakdown and explains the specialties needed. Discord supports review and discussion, with a web handoff for the larger editing flow.
 
-**Then: real squads.** Build on the committed real-profile candidate pool, adding opt-in availability and interests. Suggestions are invitations, not assignments. Members accept or decline; a maintainer approves any GitHub assignment or issue creation. Add a canonical squad/mission record in Core and map its Discord thread to it. Browser IndexedDB persistence does not yet allow the same draft to resume in Discord or on another device. Some controller descriptions and the legacy pool endpoint still refer to simulated candidates; the actual team-suggestion implementation now reads real profiles.
+**Then: real squads.** Replace simulated candidates with real, opted-in developers, including availability and interests. Suggestions are invitations, not assignments. Members accept or decline; a maintainer approves any GitHub assignment or issue creation. Keep a canonical squad/mission record in Core and map its Discord thread to it.
 
 Do not publicly rank people by inferred AI skill as the main game mechanic. Use matching to help someone contribute; use observable contributions for recognition. Core’s existing profile matcher finds people for an issue; finding issues for a person is a separate capability.
 
@@ -90,9 +84,6 @@ flowchart LR
   U --> DB[(Core PostgreSQL)]
   U --> O[Durable work intent for new reliable flows]
   O --> Q[Existing JobQueue / pg-boss]
-  Q --> E[Data engine: metrics and rules]
-  E --> A[Idempotent domain reward actions]
-  E --> N
   Q --> N[Core workers and delivery policy]
   N --> DC[Discord platform adapter]
   N --> P[Existing in-app / push adapters]
@@ -106,8 +97,7 @@ flowchart LR
 | Bot repository | Gateway connection, incoming Discord events, slash commands, buttons/modals, immediate acknowledgments and interaction rendering |
 | `users` | Canonical member identity, linked Discord account, XP ledger and tier policy |
 | `bounties`, `projects`, `achievements` | Their existing business rules, eligibility and state |
-| `engine`, from the data-engine branch | Trackables, metric projections and configured milestone/ranking rules; dispatches registered actions through domain ports |
-| Thin `engagement` feature, only for concrete workflows | Daily/quest completion evidence, proposal policy, consent and season lifecycle; feeds the engine rather than implementing another rule evaluator. Issue voting stays in `issues` |
+| New `engagement` feature, added when needed | Daily/quest completion, proposal/vote rules, seasons; uses the users XP port |
 | `devloot-dreamteam` | Planning and future squad workflow; existing access/maintainer rules remain effective |
 | `notifications` | Subscriptions, recipient selection, digest policy, durable delivery state |
 | New `moderation` feature | Assessments, cases, moderator decisions and action policy; Discord enforcement through a port |
@@ -141,8 +131,6 @@ Use GitHub identity for community participation without requiring a funded walle
 Core’s `DomainEventBus` is **in-process and non-durable**; it cannot connect the separate bot process to Core. pg-boss is the existing cross-process durable job mechanism, but a queue dedupe key is not a permanent business idempotency record.
 
 For new reward and delivery flows, persist the domain change and durable work intent in the same database transaction. A worker publishes jobs through `JobQueue`, and consumers track processed business keys. This needs a small transactional outbox/work-intent capability; it is not already guaranteed by `publish()` after a database update. Add it where the first reliable slice requires it, then migrate existing side effects incrementally.
-
-The engine's `EngineTrackEvent` is a metric ledger, not that transactional outbox; `EngineRuleExecution` currently records only last-fired state, not per-action retries. Extend those existing owners with event deduplication, atomic execution reservation and durable action outcomes rather than building competing mechanisms in the bot. The planned event bridge's mapping catalog is reusable, but its in-process listener design alone does not close the durability gap. See the [engine review](discord-data-engine-review.md).
 
 Suggested contracts, all new unless already identified above:
 
@@ -201,12 +189,11 @@ Assumption: one pilot guild, existing hosting/PostgreSQL retained, one engineer 
 
 | Phase | Deliverable | Dependencies and exit gate | Rough calendar |
 |---|---|---|---|
-| 0 — Baseline and decisions | Verify deployed versions, DB ownership, feed producer, linking journey and current guild activity; integrate the engine and profile branches. Define analytics and pilot channels | Written compatibility inventory and baseline; agree event, actor and action contracts with the engine owner | Re-estimate branch integration; baseline 2–4 days |
-| Engine foundation — prerequisite for shared rewards | Durable ingestion, event IDs, atomic rule reservations, per-action outcomes, canonical identity and correct schedules; complete event bridge/catalog | Replay and concurrency cannot duplicate XP; failed actions retry; schedules and time windows behave as configured | Re-estimate with engine owner; profile/discovery work can proceed independently |
+| 0 — Baseline and decisions | Verify deployed versions, DB ownership, feed producer, linking journey, current guild activity and work-in-progress Core APIs. Define analytics and pilot channels | Written compatibility inventory and baseline; identify production-ready profile paths | 2–4 days |
 | 1 — Identity + passport | Core channel authentication/linking; `/profile` and existing achievements; contextual web links; first central XP slice | A new GitHub-only member can link safely, view a card and resume on web; duplicate link/claim awards prevented | 1–2 weeks |
 | 2 — Discovery + recognition | Browse/filter bounties, opportunity cards, shipped feed, opt-in preferences, weekly digest; delivery tracking | One source event leads to intended destinations; retry, stale-card and unsubscribe behavior verified | 1–2 weeks |
-| 3 — Contribution loop | Verified daily/quest/proposal producers and engine rule templates; shared issue voting and idempotent XP; retire duplicate bot writes | Confirmed actions award once across channels; legacy totals preserved; fake/replayed activity does not earn again | 1–2 weeks after engine foundation |
-| 4 — Squads and Dream Team | Add opt-in/availability to existing real candidate pool; server-persisted plans, invitation/acceptance and shared thread | Authorization parity, accepted participation and resumable web/Discord progress | 2–3 weeks, re-estimate after persistence design |
+| 3 — Contribution loop | Core-owned daily/quests/proposals/votes and XP ledger; retire duplicate bot writes; contribution-focused recap | Confirmed actions award once across channels; legacy totals preserved; fake/replayed activity does not earn again | 1–2 weeks |
+| 4 — Squads and Dream Team | Real opt-in candidate pool, draft plans, invitation/acceptance and shared thread; reviewed GitHub writes later | No simulated member presented as recruitable; authorization parity and visible web/Discord progress | 2–3 weeks |
 | Moderation track | JEV shadow evaluation, then moderator review cards | Labeled evaluation and moderator review before enforcement; Core failure leaves deterministic protections working | 1–2 weeks for tooling; observation time additional |
 
 The first public milestone is **safe linking + builder passport + browseable work + useful celebrations**. Aim to validate that smaller loop before investing in the complete Dream Team lifecycle. Run moderation shadow evaluation alongside it if moderator capacity is available.
@@ -217,13 +204,12 @@ Each slice should be reviewable and independently enabled for the pilot guild:
 
 1. Add characterization tests for the current successful onboarding, daily claim, valid proposal and tier behavior; record known bugs separately. Add command acknowledgment/error handling and an explicit command-registration step.
 2. Add Core Discord linking and service authentication, including replay/conflict/unlink tests. Add the bot Core API client and capability-specific feature flags.
-   In parallel, integrate the engine branch and agree typed event/actor contracts; harden ingestion and rule execution before enabling new reward rules.
 3. Add an authorized public-safe profile projection; implement `/profile` and existing-achievement cards with missing-wallet/profile fallbacks.
 4. Add XP award ledger and transactional first-link/daily completion; migrate those writers before adding reward-bearing features. Backfill an opening balance rather than recalculating historical awards blindly.
 5. Add one durable bounty-created delivery route and persisted message mapping, then a second event; disable the prior producer per route.
 6. Add `/bounties`, follow/preferences and a weekly digest. Introduce new activity types only with a verified event source.
 7. Add JEV moderation case intake and shadow assessments behind a flag. Evaluation comes before action automation.
-8. Add contribution producers and admin-configured engine rules, then opt-in squads using real completion/consent records. Implement a `REQUEST_NOTIFICATION` engine action through the notifications port; do not embed Discord sends in the evaluator.
+8. Add contribution quests and later opt-in squads, using real completion/consent records.
 
 ### Cutover and rollback
 
@@ -243,7 +229,7 @@ Track first-contribution conversion, time to first contribution, week-1/week-4 c
 
 Gather a 2–4 week baseline where traffic permits, then compare equally sized pilot cohorts/windows and report absolute counts. Small-community results will be directional. Set initial improvement targets from that baseline; do not treat message count, `/daily` claims, or AI-generated output as proof of meaningful engagement.
 
-Implementation validation must cover concurrent/replayed rewards, link hijack/replay, same permissions across channels, bot restart during a button flow, duplicate/reordered events, worker failure after send, stale/deleted Discord messages, rate limits and closed DMs, and JEV timeout/invalid output. Run Core’s existing architecture checks to ensure use cases remain independent of Discord and Prisma adapters. The follow-up review ran focused unit tests; results and limitations are recorded in the engine review. Deployment health and database integration remain unverified.
+Implementation validation must cover concurrent/replayed rewards, link hijack/replay, same permissions across channels, bot restart during a button flow, duplicate/reordered events, worker failure after send, stale/deleted Discord messages, rate limits and closed DMs, and JEV timeout/invalid output. Run Core’s existing architecture checks to ensure use cases remain independent of Discord and Prisma adapters. This planning change does not execute application tests or validate deployment health.
 
 ## Source map
 
@@ -254,7 +240,6 @@ Paths below are relative to this document and point to the inspected working tre
 - Core reuse: [profile endpoints](../../devloot-core/server/src/modules/users/http/profile-judgment.controller.ts), [real contributor matching](../../devloot-core/server/src/modules/users/application/match-contributors.usecase.ts), [Dream Team controller](../../devloot-core/server/src/modules/devloot-dreamteam/http/devloot-dreamteam.controller.ts), [Dream Team access](../../devloot-core/server/src/modules/devloot-dreamteam/http/dreamteam-access.ts), [achievements](../../devloot-core/server/src/modules/achievements/http/achievements.controller.ts), [feed projection](../../devloot-core/server/src/modules/feed/infrastructure/prisma-feed-read-model.ts).
 - Integration boundaries: [Discord client](../../devloot-core/server/src/platform/discord/discord.client.ts), [XP use case](../../devloot-core/server/src/modules/users/application/award-xp.usecase.ts), [notifier adapter](../../devloot-core/server/src/modules/notifications/infrastructure/notifier.adapter.ts), [schema and push outbox](../../devloot-core/server/prisma/schema.prisma), [OAuth identity tests](../../devloot-core/server/src/modules/users/http/github-oauth.controller.spec.ts), [Connect page](../../devloot-core/client/src/pages/ConnectPage.tsx).
 - Moderation/JEV: [TypeSafe client](../../devloot-core/server/src/platform/typesafe/typesafe.client.ts), [community actions](../../devloot-core/server/src/modules/community/application/community-actions.usecases.ts).
-- Committed follow-up: [engine integration review and pinned branch sources](discord-data-engine-review.md), [real Dream Team recommendation implementation](../../devloot-core/server/src/modules/devloot-dreamteam/application/suggest-devloot-dreamteam-team.usecase.ts), [browser-local workspace persistence](../../devloot-core/client/src/lib/devloot-dreamteam-db.ts).
 - Supplied skills: [discord-bot-architect](https://github.com/sickn33/agentic-awesome-skills/tree/main/skills/discord-bot-architect) informed interaction and operations design; [discord-bot](https://github.com/claude-office-skills/skills/tree/main/discord-bot) informed community/moderation patterns. [discord-reader](https://github.com/himself65/finance-skills/tree/main/plugins/social-readers/skills/discord-reader) was inspected and installed but its live financial-research workflow was not used. Official Discord documentation takes precedence over stale examples.
 
 Open implementation decisions: confirm production topology and deployed profile features; approve the secure linking UX; choose pilot channels and moderator owner; confirm current Dream Team entitlement policy; set moderation evidence retention and notification cadence. These do not prevent the proposed read-only profile/discovery milestone from being specified now.
