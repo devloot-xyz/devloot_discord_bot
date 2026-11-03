@@ -273,18 +273,112 @@ export class DiscordRoleService {
     }
   }
 
-  async fetchRoleIdByName(roleName: string): Promise<string | null> {
+  async ensureAndAssignStackRoles(
+    discordId: string,
+    stacks: string[],
+  ): Promise<void> {
     const guildId = process.env.DISCORD_GUILD_ID;
-    if (!guildId || !this.botToken) return null;
+    if (!guildId || !this.botToken || !stacks.length) return;
 
     try {
-      const res = await axios.get(
+      const rolesRes = await axios.get(
         `https://discord.com/api/v10/guilds/${guildId}/roles`,
         {
           headers: { Authorization: `Bot ${this.botToken}` },
         },
       );
-      const role = res.data.find((r: { name: string }) => r.name === roleName);
+      const existingRoles: { id: string; name: string }[] = rolesRes.data;
+      const roleIdsToAssign: string[] = [];
+
+      for (const stack of stacks) {
+        const roleName = `Dev: ${stack}`;
+        let role = existingRoles.find(
+          (r) => r.name.toLowerCase() === roleName.toLowerCase(),
+        );
+
+        if (!role) {
+          try {
+            const createRes = await axios.post(
+              `https://discord.com/api/v10/guilds/${guildId}/roles`,
+              {
+                name: roleName,
+                color: 0x3498db,
+                hoist: false,
+                mentionable: true,
+              },
+              {
+                headers: {
+                  Authorization: `Bot ${this.botToken}`,
+                  'Content-Type': 'application/json',
+                },
+              },
+            );
+            role = createRes.data;
+            if (role) {
+              existingRoles.push(role);
+              this.logger.log(
+                `[role] Created stack role "${roleName}" (${role.id})`,
+              );
+            }
+          } catch (createErr) {
+            this.logger.warn(
+              `[role] Failed to create stack role "${roleName}": ${createErr}`,
+            );
+          }
+        }
+
+        if (role?.id) {
+          roleIdsToAssign.push(role.id);
+        }
+      }
+
+      if (roleIdsToAssign.length > 0) {
+        const memberRes = await axios.get<{ roles: string[] }>(
+          `https://discord.com/api/v10/guilds/${guildId}/members/${discordId}`,
+          {
+            headers: { Authorization: `Bot ${this.botToken}` },
+          },
+        );
+        const currentRoles: string[] = memberRes.data.roles;
+        const updatedRoles = Array.from(
+          new Set([...currentRoles, ...roleIdsToAssign]),
+        );
+
+        if (updatedRoles.length !== currentRoles.length) {
+          await axios.patch(
+            `https://discord.com/api/v10/guilds/${guildId}/members/${discordId}`,
+            { roles: updatedRoles },
+            {
+              headers: {
+                Authorization: `Bot ${this.botToken}`,
+                'Content-Type': 'application/json',
+              },
+            },
+          );
+          this.logger.log(
+            `[role] Assigned stack roles to ${discordId}: ${roleIdsToAssign.join(', ')}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[role] Failed to assign stack roles for ${discordId}: ${err}`,
+      );
+    }
+  }
+
+  async fetchRoleIdByName(roleName: string): Promise<string | null> {
+    const guildId = process.env.DISCORD_GUILD_ID;
+    if (!guildId || !this.botToken) return null;
+
+    try {
+      const res = await axios.get<Array<{ id: string; name: string }>>(
+        `https://discord.com/api/v10/guilds/${guildId}/roles`,
+        {
+          headers: { Authorization: `Bot ${this.botToken}` },
+        },
+      );
+      const role = res.data.find((r) => r.name === roleName);
       return role?.id ?? null;
     } catch (err) {
       this.logger.warn(`[roles] Failed to fetch roles: ${err}`);

@@ -120,8 +120,19 @@ model User {
   wonBounties       Bounty[]       // Relation back to bounties won by this user
   notifications     Notification[] // Relation to user notifications
   repositories      UserRepository[]
+  preferences       UserPreferences?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
+}
+
+model UserPreferences {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  intent      String?  // "hunter", "funder", "explorer"
+  stacks      String[] // ["rust", "algorand", "typescript"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Notification {

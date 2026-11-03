@@ -9,8 +9,8 @@ import {
   Interaction,
   Message,
   GuildMember,
-  ChatInputCommandInteraction,
   ButtonInteraction,
+  StringSelectMenuInteraction,
   MessageReaction,
   User,
 } from 'discord.js';
@@ -23,6 +23,7 @@ import { ChefSchedulerService } from './services/chef-scheduler.service';
 import { CommandDispatcherService } from './services/command-dispatcher.service';
 import { WelcomeService } from './services/welcome.service';
 import { QuestCommand, QUEST_POOL } from './commands/quest';
+import { OnboardingCommand } from './commands/onboarding';
 
 @Injectable()
 export class DiscordGateway implements OnModuleInit {
@@ -39,6 +40,7 @@ export class DiscordGateway implements OnModuleInit {
     private commandDispatcher: CommandDispatcherService,
     private welcomeService: WelcomeService,
     private quest: QuestCommand,
+    private onboarding: OnboardingCommand,
   ) {}
 
   async onModuleInit() {
@@ -148,6 +150,8 @@ export class DiscordGateway implements OnModuleInit {
           await this.commandDispatcher.dispatch(interaction, this.client);
         } else if (interaction.isButton()) {
           await this.handleButton(interaction);
+        } else if (interaction.isStringSelectMenu()) {
+          await this.handleSelectMenu(interaction);
         } else if (interaction.isModalSubmit()) {
           this.logger.log(
             `[modal] ${interaction.customId} by ${interaction.user.tag}`,
@@ -198,6 +202,18 @@ export class DiscordGateway implements OnModuleInit {
       await this.verifyService.handleVerify(interaction);
     } else {
       this.logger.warn(`[btn] Unhandled button: ${interaction.customId}`);
+    }
+  }
+
+  private async handleSelectMenu(interaction: StringSelectMenuInteraction) {
+    if (interaction.customId.startsWith('onboarding-intent')) {
+      await this.onboarding.handleIntentSelect(interaction);
+    } else if (interaction.customId.startsWith('onboarding-stack')) {
+      await this.onboarding.handleStackSelect(interaction);
+    } else {
+      this.logger.warn(
+        `[select] Unhandled select menu: ${interaction.customId}`,
+      );
     }
   }
 

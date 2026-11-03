@@ -54,7 +54,7 @@ export class WelcomeService {
       const existingBot = messages.find(
         (m) =>
           m.author.id === client.user?.id &&
-          m.embeds[0]?.title === 'Welcome to DevLoot',
+          m.embeds[0]?.title?.includes('Welcome to DevLoot'),
       );
 
       if (existingBot) {

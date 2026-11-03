@@ -51,6 +51,10 @@ export class DiscordXpService {
     return this.addXp(proposerId, 25);
   }
 
+  async addProfileCompletionXp(userId: string): Promise<number> {
+    return this.addXp(userId, 50);
+  }
+
   async addVoteXp(userId: string): Promise<number> {
     return this.addXp(userId, 2);
   }
