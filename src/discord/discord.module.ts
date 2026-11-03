@@ -21,6 +21,7 @@ import { QuestCommand } from './commands/quest';
 import { ProposeCommand } from './commands/propose';
 import { ProposalsCommand } from './commands/proposals';
 import { LeaderboardCommand } from './commands/leaderboard';
+import { LfsCommand } from './commands/lfs';
 import { AiModule } from '../ai/ai.module';
 
 const DISCORD_CLIENT = {
@@ -64,6 +65,7 @@ const DISCORD_CLIENT = {
     ProposeCommand,
     ProposalsCommand,
     LeaderboardCommand,
+    LfsCommand,
   ],
   exports: [DiscordNotificationService, DiscordXpService],
 })

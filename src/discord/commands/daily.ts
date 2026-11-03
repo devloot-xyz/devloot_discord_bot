@@ -67,11 +67,19 @@ export class DailyCommand {
     });
 
     // Calculate XP with streak bonus
+    const prefs = user
+      ? await this.prisma.userPreferences.findUnique({
+          where: { userId: user.id },
+        })
+      : null;
+    const isHunter = prefs?.intent === 'hunter';
+    const baseXp = isHunter ? 15 : BASE_XP;
+
     const streakBonus = Math.min(
       (currentStreak - 1) * STREAK_BONUS_PER_DAY,
       MAX_STREAK_BONUS,
     );
-    const totalXp = BASE_XP + streakBonus;
+    const totalXp = baseXp + streakBonus;
 
     // Award XP
     await this.xpService.addXp(discordId, totalXp);
@@ -82,12 +90,16 @@ export class DailyCommand {
       data: { lastDailyClaim: now },
     });
 
+    const baseField = isHunter
+      ? `+${baseXp} XP (Hunter bonus: +5)`
+      : `+${baseXp} XP`;
+
     const embed = new EmbedBuilder()
       .setColor(Colors.Gold)
       .setTitle('Daily Claimed!')
       .setDescription(`You earned **${totalXp} XP**`)
       .addFields(
-        { name: 'Base', value: `+${BASE_XP} XP`, inline: true },
+        { name: 'Base', value: baseField, inline: true },
         {
           name: 'Streak Bonus',
           value: streakBonus > 0 ? `+${streakBonus} XP` : 'None',

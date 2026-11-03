@@ -75,6 +75,7 @@ export class DiscordNotificationService implements OnModuleInit {
     description: string,
     fields: { name: string; value: string; inline?: boolean }[],
     color: number,
+    content?: string,
   ): Promise<{ status: number; data?: { id?: string } } | null> {
     if (!this.isConfigured) {
       this.logger.warn('Discord not configured — skipping notification');
@@ -82,19 +83,34 @@ export class DiscordNotificationService implements OnModuleInit {
     }
 
     try {
+      const payload: {
+        content?: string;
+        embeds: {
+          title: string;
+          description: string;
+          fields: { name: string; value: string; inline?: boolean }[];
+          color: number;
+          timestamp: string;
+        }[];
+      } = {
+        embeds: [
+          {
+            title,
+            description,
+            fields,
+            color,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+
+      if (content) {
+        payload.content = content;
+      }
+
       const response = await axios.post(
         `https://discord.com/api/v10/channels/${this.channelId}/messages`,
-        {
-          embeds: [
-            {
-              title,
-              description,
-              fields,
-              color,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        },
+        payload,
         {
           headers: {
             Authorization: `Bot ${this.botToken}`,
@@ -135,6 +151,7 @@ export class DiscordNotificationService implements OnModuleInit {
     const issueNumber = parseInt(issueNumberStr);
 
     let issueTitle = '';
+    let issueLabels: string[] = [];
     let aiSummary: {
       repoDescription: string;
       issueDescription: string;
@@ -149,7 +166,7 @@ export class DiscordNotificationService implements OnModuleInit {
       );
       issueTitle = issueRes.data.title || '';
       const issueBody = issueRes.data.body || '';
-      const issueLabels = (issueRes.data.labels || []).map(
+      issueLabels = (issueRes.data.labels || []).map(
         (l: { name: string } | string) => (typeof l === 'string' ? l : l.name),
       );
 
@@ -165,6 +182,30 @@ export class DiscordNotificationService implements OnModuleInit {
         `[bounty-feed] Failed to fetch issue or generate AI summary: ${err}`,
       );
     }
+
+    const labelRoleMap: Record<string, string | undefined> = {
+      rust: process.env.ROLE_DEV_RUST,
+      typescript: process.env.ROLE_DEV_TYPESCRIPT,
+      python: process.env.ROLE_DEV_PYTHON,
+      algorand: process.env.ROLE_DEV_ALGORAND,
+      'good first issue': process.env.ROLE_NEWCOMER,
+    };
+
+    const matchedRoleIds = new Set<string>();
+    for (const label of issueLabels) {
+      const normalized = label.toLowerCase().trim();
+      const roleId = labelRoleMap[normalized];
+      if (roleId) {
+        matchedRoleIds.add(roleId);
+      }
+    }
+
+    const mentionContent =
+      matchedRoleIds.size > 0
+        ? Array.from(matchedRoleIds)
+            .map((id) => `<@&${id}>`)
+            .join(' ')
+        : undefined;
 
     const fields: { name: string; value: string; inline?: boolean }[] = [
       {
@@ -198,6 +239,7 @@ export class DiscordNotificationService implements OnModuleInit {
       `[${owner}/${repo}](https://github.com/${owner}/${repo})`,
       fields,
       0x2ecc71,
+      mentionContent,
     );
 
     // Create auto-thread for bounty discussion

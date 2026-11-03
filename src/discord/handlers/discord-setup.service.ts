@@ -167,6 +167,16 @@ export class DiscordSetupService {
         ],
       },
       {
+        name: '🤝-looking-for-squad',
+        topic:
+          'Find teammates to hunt and build bounties together. Use /lfs to post.',
+        parent: createdCategories['🌍 COMMUNITY'],
+        permissions: [
+          { id: everyoneId, deny: ['ViewChannel'] },
+          { id: verifiedId, allow: ['ViewChannel', 'SendMessages'] },
+        ],
+      },
+      {
         name: '💡-proposals',
         topic:
           'Suggest open source issues worth funding. Use /propose — raw messages get cleaned up.',
