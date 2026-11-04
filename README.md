@@ -57,7 +57,7 @@ Configure the required environment variables in your local environment or `.env`
 - `DISCORD_GUILD_ID` _(optional)_: Server ID for instant guild-scoped command registration during development.
 - `GITHUB_TOKEN` _(required for `/propose`)_: GitHub personal access token used to verify issue metadata with the GitHub API.
 - `OPENROUTER_API_KEY` _(optional)_: API key for AI proposal analysis.
-- `CLIENT_URL` _(optional)_: Frontend base URL for linking accounts (defaults to `https://devloot.app`).
+- `CLIENT_URL` _(optional)_: Frontend base URL for bounty links. Set production to `https://devloot.xyz`. Discord account linking stays paused until the verified Core OAuth flow is deployed.
 
 ### Available Scripts
 

@@ -8,32 +8,32 @@ import {
   ChatInputCommandInteraction,
 } from 'discord.js';
 
+import { DiscordConnectService } from '../services/discord-connect.service';
+
 @Injectable()
 export class OnboardingCommand {
-  buildOnboardingMessage(discordId?: string) {
-    const frontendUrl = process.env.CLIENT_URL || 'https://devloot.app';
-    const connectUrl = discordId
-      ? `${frontendUrl}/connect?discord_id=${discordId}`
-      : `${frontendUrl}/connect`;
+  constructor(private readonly connect: DiscordConnectService) {}
 
+  buildOnboardingMessage() {
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
       .setTitle('Welcome to DevLoot')
       .setDescription(
-        'Connect your GitHub to unlock the full server and start earning.\n\n' +
-          '**How it works:**\n' +
-          '1. Click **Link GitHub** — sign in with your GitHub account\n' +
-          '2. Come back here and click **Verify**\n' +
-          '3. Earn **100 XP** and unlock all channels\n\n' +
-          'Already linked? Just click Verify.',
+        this.connect.enabled
+          ? 'Click **Link GitHub** to sign in to DevLoot and connect your Discord account. Then come back and click **Verify** to unlock the server. Already linked? Click **Verify**.'
+          : 'New GitHub links are temporarily unavailable. If you’ve already linked your GitHub account to Discord through DevLoot, click **Verify** to restore access.',
       )
       .setFooter({ text: 'Open source bounties on Algorand' });
 
-    const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setLabel('Link GitHub')
-        .setStyle(ButtonStyle.Link)
-        .setURL(connectUrl),
+    const buttons = new ActionRowBuilder<ButtonBuilder>();
+    if (this.connect.enabled)
+      buttons.addComponents(
+        new ButtonBuilder()
+          .setCustomId('onboarding-link')
+          .setLabel('Link GitHub')
+          .setStyle(ButtonStyle.Primary),
+      );
+    buttons.addComponents(
       new ButtonBuilder()
         .setCustomId('onboarding-verify')
         .setLabel('Verify')
@@ -44,7 +44,7 @@ export class OnboardingCommand {
   }
 
   async handle(interaction: ChatInputCommandInteraction) {
-    const message = this.buildOnboardingMessage(interaction.user.id);
+    const message = this.buildOnboardingMessage();
     await interaction.reply({ ...message, flags: MessageFlags.Ephemeral });
   }
 }
