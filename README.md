@@ -1,216 +1,126 @@
 # DevLoot Discord Bot
 
-The community engine for **DevLoot**, an open-source bounty marketplace on Algorand.
+DevLoot is an open-source bounty platform on Algorand. This repository contains its Discord bot, which helps community members connect GitHub accounts, discover and suggest bounty issues, and earn XP for participation. The bot also supports proposal voting, community roles, auto-threading, and bounty-related notifications.
 
-The bot handles member onboarding, bounty proposals and reaction voting, XP and gamification, and live bounty notifications inside a Discord server. It is a NestJS application built on `discord.js` v14, backed by Prisma and PostgreSQL.
+## Features
 
----
-
-## What It Does
-
-| Area | Behaviour |
-|---|---|
-| **Onboarding** | Welcomes new server members and provides a verification button. Seven commands stay locked until onboarding is completed (see [Onboarding Gate](#onboarding-gate)). |
-| **Bounty Proposals** | Members suggest a GitHub issue with a desired bounty amount via `/propose`. Proposals are saved to the database, published to the suggestions channel, and voted on via emoji reactions. |
-| **XP & Gamification** | Members earn XP through daily claims and quest completions, progress across tiers (`Newcomer`, `Builder`, `Hunter`, `Legend`), maintain daily streaks, and rank on a global leaderboard. |
-| **Quests** | Single quest currently active: propose a bounty in the proposals channel (awards 25 XP automatically upon posting). |
-| **Bounty Feed** | Publishes rich embed announcements to a designated feed channel whenever bounties are created or updated. |
-| **Open Source Chef** | A scheduled weekly check (7-day window) assigns or revokes a special Chef role based on whether the member created or claimed bounties in the past week. |
-| **Moderation & Threads** | Automated channel moderation and automated thread creation support for structured discussion. |
+- **GitHub Onboarding & Verification**: Guides members through linking their GitHub account and verifying via Discord interaction to earn initial XP and the `Verified` role.
+- **Bounty Proposals & Community Signals**: Enables onboarded members to propose open GitHub issues for USDC bounties and browse top proposals from the past week. Members can vote with `👍` or `👎`, or use `💵` to signal interest in topping up a bounty.
+- **Auto-Threading**: Automatically generates dedicated discussion threads for new proposals and bounty announcements to keep channels organized.
+- **XP & Gamification**: Tracks user XP, daily claims with streak bonuses, daily quests, progression tiers (`Newcomer`, `Builder`, `Hunter`, `Legend`), and a community leaderboard.
+- **Server Setup & Moderation**: Provides an administrator command to initialize standard server channels and roles, and moderates designated bot channels by cleaning non-command messages.
+- **Bounty Sync & Role Automation**: Synchronizes XP earned from bounty activities (creators and claimers) and automatically tracks weekly qualification for the `Open Source Chef` role.
 
 ---
 
 ## Slash Commands
 
-Commands are registered at startup via `src/discord/discord.gateway.ts`, either globally or scoped to a specific guild when `DISCORD_GUILD_ID` is configured.
+| Command         | Purpose                                                 | Required Arguments                                                                           | Access Restrictions                                                                                 |
+| --------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `/onboarding`   | Start GitHub linking and server verification.           | None                                                                                         | Any member                                                                                          |
+| `/propose`      | Suggest an open GitHub issue for a USDC bounty.         | `message` (short pitch)<br>`issue_url` (GitHub issue URL)<br>`bounty_amount` (number, min 1) | Onboarded members (10 per rolling 24 hours per user; 10 per UTC calendar day across the database)   |
+| `/daily`        | Claim daily XP reward and maintain streak.              | None                                                                                         | Onboarded members (24h cooldown)                                                                    |
+| `/rank`         | View your XP, tier, streaks, and proposal stats.        | None                                                                                         | Onboarded members                                                                                   |
+| `/quests`       | View today's available quests and completion status.    | None                                                                                         | Onboarded members                                                                                   |
+| `/proposals`    | Browse top 10 proposals from the past 7 days.           | None                                                                                         | Onboarded members                                                                                   |
+| `/leaderboard`  | View the top 10 members by XP and your rank.            | None                                                                                         | Onboarded members                                                                                   |
+| `/sync-points`  | Synchronize XP from bounty activity.                    | None                                                                                         | Onboarded Discord administrators (checked at runtime)                                               |
+| `/setup-server` | Create required server channels, categories, and roles. | None                                                                                         | Discord administrators (`Administrator` permission default + runtime check)                         |
+| `/check-chef`   | Trigger weekly Open Source Chef role evaluation.        | None                                                                                         | Discord administrators (`Administrator` permission default + runtime check)                         |
 
-| Command | Purpose | Required Arguments | Access Restrictions |
-|---|---|---|---|
-| `/propose` | Suggest a GitHub issue for a bounty | `message` (string)<br>`issue_url` (string)<br>`bounty_amount` (number, min 1) | Onboarding required |
-| `/daily` | Claim your daily XP reward and extend streak | — | Onboarding required |
-| `/rank` | View your current XP, level, and tier | — | Onboarding required |
-| `/quests` | Display available server quests | — | Onboarding required |
-| `/proposals` | List recent bounty proposals | — | Onboarding required |
-| `/onboarding` | Trigger the interactive onboarding workflow | — | Everyone |
-| `/leaderboard` | View top server members ranked by XP | — | Onboarding required |
-| `/sync-points` | Reconcile and sync XP from bounty activity | — | **Administrator** (runtime permission guard) |
-| `/setup-server` | Configure required server channels and roles | — | **Administrator** (registration default permission + runtime guard) |
-| `/check-chef` | Manually run the Open Source Chef role check | — | **Administrator** (registration default permission + runtime guard) |
+> **Note**: Slash commands are registered globally by default, or registered specifically to a single server when `DISCORD_GUILD_ID` is set. Commands requiring onboarding are blocked until the member has linked GitHub and completed verification.
 
 ### Onboarding Gate
 
 `src/discord/services/command-dispatcher.service.ts` enforces an onboarding prerequisite for the following seven commands:
-* `propose`
-* `daily`
-* `rank`
-* `quests`
-* `proposals`
-* `leaderboard`
-* `sync-points`
+* `/propose`
+* `/daily`
+* `/rank`
+* `/quests`
+* `/proposals`
+* `/leaderboard`
+* `/sync-points`
 
 Non-onboarded users invoking these commands receive an ephemeral prompt directing them to complete `/onboarding` first. `/onboarding`, `/setup-server`, and `/check-chef` are exempt from the onboarding gate.
 
-### Administrator Enforcement
+### Administrator Permission Enforcement
 
-All three admin commands enforce strict administrator authorization, with layered checks:
-1. **Runtime Guards:** All three commands check `Administrator` permissions at invocation time:
-   - `/setup-server`: checked in `src/discord/handlers/discord-setup.service.ts` (`!interaction.memberPermissions?.has('Administrator')`).
-   - `/check-chef`: checked in `src/discord/services/command-dispatcher.service.ts` (`!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)`).
-   - `/sync-points`: checked in `src/discord/services/command-dispatcher.service.ts` (`!interaction.memberPermissions?.has('Administrator')`).
-2. **Registration Defaults:** In `src/discord/discord.gateway.ts`, `/setup-server` and `/check-chef` also call `.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)`. This hints the Discord UI to hide the commands from non-admin users in the slash command autocomplete menu. `/sync-points` relies solely on the runtime check.
+Administrative access is protected by two distinct layers:
+1. **Registration-Level Permission**: `/setup-server` and `/check-chef` set `.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)`. Discord automatically hides or restricts these commands in the UI for non-administrators.
+2. **Runtime Guard**: `/setup-server`, `/check-chef`, and `/sync-points` evaluate `interaction.memberPermissions?.has('Administrator')` at execution time, returning an ephemeral error message if invoked without administrative rights.
 
 ---
 
 ## Repository Map
 
-```
-src/
-├── main.ts                           Bootstrap file; binds HTTP server to BOT_PORT (default 3001)
-├── app.module.ts                     Root NestJS module wiring Discord, Prisma, and AI modules
-├── discord/
-│   ├── discord.module.ts             Discord client provider with configured Gateway intents
-│   ├── discord.gateway.ts            Slash command registration, client events, and routing
-│   ├── commands/                     Slash command definitions and interaction handlers
-│   │   ├── onboarding.ts             /onboarding
-│   │   ├── propose.ts                /propose
-│   │   ├── daily.ts                  /daily
-│   │   ├── rank.ts                   /rank
-│   │   ├── quest.ts                  /quests
-│   │   ├── proposals.ts              /proposals
-│   │   └── leaderboard.ts            /leaderboard
-│   ├── handlers/                     Interaction handlers
-│   │   ├── discord-setup.service.ts  Server setup execution (/setup-server)
-│   │   └── welcome.service.ts        Member join & verification button handler
-│   └── services/                     Domain services (see table below)
-├── ai/
-│   ├── ai.module.ts                  AI module provider
-│   └── ai.service.ts                 OpenRouter model integrations
-└── prisma/
-    ├── prisma.module.ts              Prisma module provider
-    └── prisma.service.ts             Prisma database client lifecycle
-prisma/
-├── schema.prisma                     Data models, relations, and enums
-└── migrations/                       Database migration history
-```
-
-### Services
-
-| Service | File | Responsibility |
-|---|---|---|
-| Command Dispatcher | `src/discord/services/command-dispatcher.service.ts` | Routes interactions, validates onboarding gate and admin privileges |
-| Discord XP | `src/discord/services/discord-xp.service.ts` | Calculates XP rewards, tier promotions, and daily streaks |
-| XP Sync | `src/discord/services/xp-sync.service.ts` | Reconciles off-chain XP based on Algorand bounty activity |
-| Discord Role | `src/discord/services/discord-role.service.ts` | Manages Discord role grants (tiers, newcomer, and weekly Chef role) |
-| Proposal Vote | `src/discord/services/proposal-vote.service.ts` | Manages reaction-based voting and threshold tallying on proposals |
-| Discord Notification | `src/discord/services/discord-notification.service.ts` | Dispatches rich embeds to the bounty feed channel |
-| Chef Scheduler | `src/discord/services/chef-scheduler.service.ts` | Cron scheduler running weekly Open Source Chef audits |
-| Channel Moderation | `src/discord/services/channel-moderation.service.ts` | Enforces message rules and cleans unauthorized messages |
-| Auto Threading | `src/discord/services/auto-threading.service.ts` | Creates discussion threads on new bounty announcements |
-| Discord Guild | `src/discord/services/discord-guild.service.ts` | Guild, channel, and role resolution helpers |
-
-### Data Model
-
-Defined in [`prisma/schema.prisma`](prisma/schema.prisma).
-
-#### Complete Model Inventory
-* `Project`: Tracked development projects.
-* `Repository`: GitHub repositories linked to projects.
-* `ProjectRepository`: Association mapping between projects and repositories.
-* `UserRepository`: Association mapping between contributors and repositories.
-* `Bounty`: Registered bounties with monetary reward, status, and metadata.
-* `User`: Discord users, wallet addresses, XP totals, and streak counters.
-* `Notification`: In-app and Discord notification events.
-* `BountyMessage`: Chat messages and audit history tied to bounties.
-* `Transaction`: Financial and point transaction ledger.
-* `Proposal`: Community-submitted bounty proposals.
-* `ProposalVote`: Upvote/downvote reaction records on proposals.
-* `QuestCompletion`: Records of completed quests by user.
-* `DailyStreak`: Daily activity timestamps and current streak lengths.
-
-#### Enums
-* `BountyStatus`: Lifecycle state of a bounty (`OPEN`, `IN_PROGRESS`, `SUBMITTED`, `COMPLETED`, `CANCELLED`).
-* `BountyMessageType`: Context type for bounty messages (`GENERAL`, `SUBMISSION`, `REVIEW`).
-* `TransactionType`: Ledger categories for transactions.
+| Path                                                               | Description                                                                                                                                     |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`src/discord/commands/`](src/discord/commands/)                   | Slash command handlers (`daily.ts`, `leaderboard.ts`, `onboarding.ts`, `proposals.ts`, `propose.ts`, `quest.ts`, `rank.ts`).                    |
+| [`src/discord/services/`](src/discord/services/)                   | Domain services (command dispatching, auto-threading, moderation, voting, XP, roles, and scheduled tasks).                                      |
+| [`src/discord/handlers/`](src/discord/handlers/)                   | Setup and interactive handlers (`discord-setup.service.ts` for server scaffolding, `discord-verify.service.ts` for verification button clicks). |
+| [`src/discord/discord.gateway.ts`](src/discord/discord.gateway.ts) | Discord client lifecycle, Gateway event listeners, and slash command registration.                                                              |
+| [`src/ai/`](src/ai/)                                               | OpenRouter AI service for summarizing and analyzing proposed GitHub issues.                                                                     |
+| [`prisma/schema.prisma`](prisma/schema.prisma)                     | PostgreSQL database schema (Bounties, Proposals, Users, Quests, Streaks).                                                                       |
+| [`src/`](src/)                                                     | NestJS root module (`app.module.ts`) and application entry point (`main.ts`).                                                                   |
 
 ---
 
-## Getting Started
+## Database & Prisma Models
+
+The database layer is managed by Prisma with PostgreSQL ([`prisma/schema.prisma`](prisma/schema.prisma)). Key models include:
+
+| Model | Purpose |
+|---|---|
+| `User` | Core user identity, tracking `discordId`, `githubId`, `xp`, `level`, and `tier`. |
+| `Bounty` | Bounties registered on the platform, tracking status (`OPEN`, `CLAIMED`, `COMPLETED`), prize amounts, and repo relations. |
+| `Proposal` | Community-submitted issue proposals created via `/propose`. |
+| `ProposalVote` | Community reaction votes (`UPVOTE`, `DOWNVOTE`, `SIGNAL`) associated with a proposal and voter. |
+| `DailyStreak` | Daily check-in timestamps, current streak counts, and longest recorded streaks. |
+| `QuestCompletion` | Completed quest records per user. |
+| `Project` & `Repository` | GitHub repositories tracked for bounties and proposals. |
+| `Transaction` | On-chain Algorand transaction hashes and settlement records for completed bounties. |
+| `Notification` & `BountyMessage` | Audit log of Discord message IDs for bounty feed embeds and proposal announcements. |
+
+---
+
+## Privileged Gateway Intents
+
+The bot requires the following Gateway Intents configured in the Discord Developer Portal:
+* **Server Members Intent (`GuildMembers`)**: Required to listen to `GuildMemberAdd` events and fetch member objects for role assignments and tier tracking.
+* **Message Content Intent (`MessageContent`)**: Required to inspect message reactions (`MessageReactionAdd`) for proposal voting and channel moderation.
+
+---
+
+## Development & Build Scripts
 
 ### Prerequisites
 
-* Node.js (v18+) and npm
-* PostgreSQL database instance accessible via connection URI
-* Discord Application & Bot Token created in the [Discord Developer Portal](https://discord.com/developers/applications)
+- Node.js (>= 18) and npm
+- PostgreSQL database
 
-#### Privileged Gateway Intents
-The bot configures five gateway intents in `src/discord/discord.module.ts`:
-* `GatewayIntentBits.Guilds`
-* `GatewayIntentBits.GuildMembers` *(Privileged)*
-* `GatewayIntentBits.GuildMessages`
-* `GatewayIntentBits.MessageContent` *(Privileged)*
-* `GatewayIntentBits.GuildMessageReactions`
+### Environment Configuration
 
-> [!IMPORTANT]
-> You **must** enable `GuildMembers` and `MessageContent` under the **Privileged Gateway Intents** section of your bot's settings in the Discord Developer Portal, otherwise the bot will fail to start or crash upon receiving guild events.
+Configure the required environment variables in your local environment or `.env` file:
 
-### Environment Variables
+- `DISCORD_BOT_TOKEN`: Discord bot authentication token.
+- `DISCORD_CLIENT_ID`: Discord application client ID.
+- `DATABASE_URL`: PostgreSQL connection string for Prisma.
+- `DISCORD_GUILD_ID` _(optional)_: Server ID for instant guild-scoped command registration during development.
+- `GITHUB_TOKEN` _(required for `/propose`)_: GitHub personal access token used to verify issue metadata with the GitHub API.
+- `OPENROUTER_API_KEY` _(optional)_: API key for AI proposal analysis.
+- `CLIENT_URL` _(optional)_: Frontend base URL for linking accounts (defaults to `https://devloot.app`).
 
-Configure the following variables in a `.env` file at the repository root:
+### Available Scripts
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string consumed directly by Prisma |
-| `DISCORD_BOT_TOKEN` | Discord bot secret token |
-| `DISCORD_CLIENT_ID` | Discord application client ID (for registering slash commands) |
-| `DISCORD_GUILD_ID` | Optional guild ID; if set, registers slash commands instantly to this guild instead of global propagation |
-| `DISCORD_BOUNTY_FEED_CHANNEL` | Channel ID for bounty feed embed announcements |
-| `DISCORD_BOUNTY_SUGGESTIONS_CHANNEL_ID` | Channel ID where `/propose` suggestions are posted |
-| `DISCORD_SCOUT_ROLE_ID` | Role ID assigned to community scouts |
-| `ROLE_NEWCOMER` | Role ID granted upon completing onboarding |
-| `ROLE_BUILDER` | Tier 1 role awarded at 500 XP |
-| `ROLE_HUNTER` | Tier 2 role awarded at 2,000 XP |
-| `ROLE_LEGEND` | Tier 3 role awarded at 5,000 XP |
-| `GITHUB_TOKEN` | Personal access token for GitHub API issue lookups in `/propose` and feed notifications |
-| `OPENROUTER_API_KEY` | API key for OpenRouter models in `src/ai/ai.service.ts` |
-| `CLIENT_URL` | Public web app URL (defaults to `https://devloot.app`) |
-| `BOT_PORT` | HTTP server port (defaults to `3001`) |
+| Script                | Command                                         | Purpose                                                          |
+| --------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| `npm run build`       | `nest build`                                    | Compiles the NestJS application into `dist/`.                    |
+| `npm start`           | `nest start`                                    | Starts the application.                                          |
+| `npm run start:dev`   | `prisma generate && nest start --watch`         | Generates the Prisma client and runs the app with hot reloading. |
+| `npm run start:debug` | `nest start --debug --watch`                    | Runs the app in debug mode with hot reloading.                   |
+| `npm run start:prod`  | `node dist/src/main`                            | Runs the compiled production build from `dist/`.                 |
+| `npm run lint`        | `eslint "{src,apps,libs,test}/**/*.ts" --fix`   | Runs ESLint across TypeScript files with auto-fixing.            |
+| `npm run format`      | `prettier --write "src/**/*.ts" "test/**/*.ts"` | Formats TypeScript files using Prettier.                         |
 
-### Development & Build Scripts
-
-These scripts are defined in [`package.json`](package.json). They cover local compilation, development watchers, and code formatting only (this repository does not include containerization or hosting configurations):
-
-| Script | Command | Purpose |
-|---|---|---|
-| `npm run build` | `nest build` | Compiles TypeScript source to JavaScript into `dist/` |
-| `npm run start` | `nest start` | Runs the compiled bot |
-| `npm run start:dev` | `prisma generate && nest start --watch` | Runs Prisma code generator and starts Nest in watch mode |
-| `npm run start:debug` | `nest start --debug --watch` | Starts Nest in debug mode with inspector attached |
-| `npm run start:prod` | `node dist/src/main` | Runs the compiled production bundle (requires `npm run build` first) |
-| `npm run lint` | `eslint "{src,apps,libs,test}/**/*.ts" --fix` | Runs ESLint and applies automated fixes |
-| `npm run format` | `prettier --write "src/**/*.ts" "test/**/*.ts"` | Formats code with Prettier |
-
-### Standard Local Setup
-
-```bash
-# 1. Install dependencies
-npm install
-
-# 2. Generate Prisma Client
-npx prisma generate
-
-# 3. Apply database migrations
-npx prisma migrate dev
-
-# 4. Start the bot in development mode
-npm run start:dev
-```
-
----
-
-## Contributing
-
-Open bounties and contribution guidelines are maintained in [`BOUNTIES.md`](BOUNTIES.md).
-
-## License
-
-`UNLICENSED` (private commercial software per [`package.json`](package.json)).
+> **Development vs. Production Deployment**:  
+> The scripts listed above are intended for local development, testing, and building. They do not constitute a complete production deployment guide. A production environment requires configuring secure credentials, running database migrations (`npx prisma migrate deploy`), deploying the containerized service (e.g., via the root [`Dockerfile`](Dockerfile)), configuring Discord bot Gateway intents and permissions, and setting up persistent process management.
