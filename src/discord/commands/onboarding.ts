@@ -8,18 +8,32 @@ import {
   ChatInputCommandInteraction,
 } from 'discord.js';
 
+import { DiscordConnectService } from '../services/discord-connect.service';
+
 @Injectable()
 export class OnboardingCommand {
+  constructor(private readonly connect: DiscordConnectService) {}
+
   buildOnboardingMessage() {
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
       .setTitle('Welcome to DevLoot')
       .setDescription(
-        'New GitHub links are temporarily unavailable. If you’ve already linked your GitHub account to Discord through DevLoot, click **Verify** to restore access.',
+        this.connect.enabled
+          ? 'Click **Link GitHub** to sign in to DevLoot and connect your Discord account. Then come back and click **Verify** to unlock the server. Already linked? Click **Verify**.'
+          : 'New GitHub links are temporarily unavailable. If you’ve already linked your GitHub account to Discord through DevLoot, click **Verify** to restore access.',
       )
       .setFooter({ text: 'Open source bounties on Algorand' });
 
-    const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    const buttons = new ActionRowBuilder<ButtonBuilder>();
+    if (this.connect.enabled)
+      buttons.addComponents(
+        new ButtonBuilder()
+          .setCustomId('onboarding-link')
+          .setLabel('Link GitHub')
+          .setStyle(ButtonStyle.Primary),
+      );
+    buttons.addComponents(
       new ButtonBuilder()
         .setCustomId('onboarding-verify')
         .setLabel('Verify')

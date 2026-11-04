@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { Client, GatewayIntentBits } from 'discord.js';
+import { DiscordConnectService } from './services/discord-connect.service';
 import { DiscordGateway } from './discord.gateway';
 import { DiscordNotificationService } from './services/discord-notification.service';
 import { DiscordXpService } from './services/discord-xp.service';
@@ -44,6 +45,7 @@ const DISCORD_CLIENT = {
   providers: [
     DISCORD_CLIENT,
     DiscordGateway,
+    DiscordConnectService,
     DiscordNotificationService,
     DiscordXpService,
     DiscordRoleService,

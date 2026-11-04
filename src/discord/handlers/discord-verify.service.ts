@@ -9,6 +9,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DiscordRoleService } from '../services/discord-role.service';
 import { DiscordGuildService } from '../services/discord-guild.service';
 
+import { DiscordConnectService } from '../services/discord-connect.service';
+
 @Injectable()
 export class DiscordVerifyService {
   private readonly logger = new Logger(DiscordVerifyService.name);
@@ -17,6 +19,7 @@ export class DiscordVerifyService {
     private readonly prisma: PrismaService,
     private readonly roleService: DiscordRoleService,
     private readonly guildService: DiscordGuildService,
+    private readonly connect: DiscordConnectService,
   ) {}
 
   async checkOnboarded(discordId: string): Promise<boolean> {
@@ -34,6 +37,14 @@ export class DiscordVerifyService {
     });
 
     if (!existing?.githubId) {
+      if (this.connect.enabled) {
+        if (await this.connect.grantAccess(interaction)) {
+          await interaction.editReply('You’re verified and have access to the server.');
+        } else {
+          await this.connect.start(interaction);
+        }
+        return;
+      }
       await interaction.editReply(
         'New GitHub links are temporarily unavailable. There is no linked GitHub account for this Discord user.',
       );

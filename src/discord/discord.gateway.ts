@@ -25,6 +25,8 @@ import { CommandDispatcherService } from './services/command-dispatcher.service'
 import { WelcomeService } from './services/welcome.service';
 import { QuestCommand, QUEST_POOL } from './commands/quest';
 
+import { DiscordConnectService } from './services/discord-connect.service';
+
 @Injectable()
 export class DiscordGateway implements OnModuleInit {
   private readonly logger = new Logger(DiscordGateway.name);
@@ -40,6 +42,7 @@ export class DiscordGateway implements OnModuleInit {
     private commandDispatcher: CommandDispatcherService,
     private welcomeService: WelcomeService,
     private quest: QuestCommand,
+    private readonly connect: DiscordConnectService,
   ) {}
 
   async onModuleInit() {
@@ -202,7 +205,11 @@ export class DiscordGateway implements OnModuleInit {
   }
 
   private async handleButton(interaction: ButtonInteraction) {
-    if (interaction.customId === 'onboarding-verify') {
+    if (interaction.customId === 'onboarding-link') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      if (this.connect.enabled) await this.connect.start(interaction);
+      else await interaction.editReply('New GitHub links are temporarily unavailable.');
+    } else if (interaction.customId === 'onboarding-verify') {
       this.logger.log(`[btn] onboarding-verify from ${interaction.user.tag}`);
       await this.verifyService.handleVerify(interaction);
     } else {
