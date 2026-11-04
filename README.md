@@ -11,22 +11,45 @@ DevLoot is an open-source bounty platform on Algorand. This repository contains 
 - **Server Setup & Moderation**: Provides an administrator command to initialize standard server channels and roles, and moderates designated bot channels by cleaning non-command messages.
 - **Bounty Sync & Role Automation**: Synchronizes XP earned from bounty activities (creators and claimers) and automatically tracks weekly qualification for the `Open Source Chef` role.
 
+---
+
 ## Slash Commands
 
-| Command         | Purpose                                                 | Required Arguments                                                                           | Access Restrictions                                                         |
-| --------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `/onboarding`   | Start GitHub linking and server verification.           | None                                                                                         | Any member                                                                  |
-| `/propose`      | Suggest an open GitHub issue for a USDC bounty.         | `message` (short pitch)<br>`issue_url` (GitHub issue URL)<br>`bounty_amount` (number, min 1) | Onboarded members (10 per rolling 24 hours per user; 10 per UTC calendar day across the database) |
-| `/daily`        | Claim daily XP reward and maintain streak.              | None                                                                                         | Onboarded members (24h cooldown)                                            |
-| `/rank`         | View your XP, tier, streaks, and proposal stats.        | None                                                                                         | Onboarded members                                                           |
-| `/quests`       | View today's available quests and completion status.    | None                                                                                         | Onboarded members                                                           |
-| `/proposals`    | Browse top 10 proposals from the past 7 days.           | None                                                                                         | Onboarded members                                                           |
-| `/leaderboard`  | View the top 10 members by XP and your rank.            | None                                                                                         | Onboarded members                                                           |
-| `/sync-points`  | Synchronize XP from bounty activity.                    | None                                                                                         | Onboarded Discord administrators (checked at runtime)                       |
-| `/setup-server` | Create required server channels, categories, and roles. | None                                                                                         | Discord administrators (`Administrator` permission default + runtime check) |
-| `/check-chef`   | Trigger weekly Open Source Chef role evaluation.        | None                                                                                         | Discord administrators (`Administrator` permission default + runtime check) |
+| Command         | Purpose                                                 | Required Arguments                                                                           | Access Restrictions                                                                                 |
+| --------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `/onboarding`   | Start GitHub linking and server verification.           | None                                                                                         | Any member                                                                                          |
+| `/propose`      | Suggest an open GitHub issue for a USDC bounty.         | `message` (short pitch)<br>`issue_url` (GitHub issue URL)<br>`bounty_amount` (number, min 1) | Onboarded members (10 per rolling 24 hours per user; 10 per UTC calendar day across the database)   |
+| `/daily`        | Claim daily XP reward and maintain streak.              | None                                                                                         | Onboarded members (24h cooldown)                                                                    |
+| `/rank`         | View your XP, tier, streaks, and proposal stats.        | None                                                                                         | Onboarded members                                                                                   |
+| `/quests`       | View today's available quests and completion status.    | None                                                                                         | Onboarded members                                                                                   |
+| `/proposals`    | Browse top 10 proposals from the past 7 days.           | None                                                                                         | Onboarded members                                                                                   |
+| `/leaderboard`  | View the top 10 members by XP and your rank.            | None                                                                                         | Onboarded members                                                                                   |
+| `/sync-points`  | Synchronize XP from bounty activity.                    | None                                                                                         | Onboarded Discord administrators (checked at runtime)                                               |
+| `/setup-server` | Create required server channels, categories, and roles. | None                                                                                         | Discord administrators (`Administrator` permission default + runtime check)                         |
+| `/check-chef`   | Trigger weekly Open Source Chef role evaluation.        | None                                                                                         | Discord administrators (`Administrator` permission default + runtime check)                         |
 
 > **Note**: Slash commands are registered globally by default, or registered specifically to a single server when `DISCORD_GUILD_ID` is set. Commands requiring onboarding are blocked until the member has linked GitHub and completed verification.
+
+### Onboarding Gate
+
+`src/discord/services/command-dispatcher.service.ts` enforces an onboarding prerequisite for the following seven commands:
+* `/propose`
+* `/daily`
+* `/rank`
+* `/quests`
+* `/proposals`
+* `/leaderboard`
+* `/sync-points`
+
+Non-onboarded users invoking these commands receive an ephemeral prompt directing them to complete `/onboarding` first. `/onboarding`, `/setup-server`, and `/check-chef` are exempt from the onboarding gate.
+
+### Administrator Permission Enforcement
+
+Administrative access is protected by two distinct layers:
+1. **Registration-Level Permission**: `/setup-server` and `/check-chef` set `.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)`. Discord automatically hides or restricts these commands in the UI for non-administrators.
+2. **Runtime Guard**: `/setup-server`, `/check-chef`, and `/sync-points` evaluate `interaction.memberPermissions?.has('Administrator')` at execution time, returning an ephemeral error message if invoked without administrative rights.
+
+---
 
 ## Repository Map
 
@@ -40,11 +63,39 @@ DevLoot is an open-source bounty platform on Algorand. This repository contains 
 | [`prisma/schema.prisma`](prisma/schema.prisma)                     | PostgreSQL database schema (Bounties, Proposals, Users, Quests, Streaks).                                                                       |
 | [`src/`](src/)                                                     | NestJS root module (`app.module.ts`) and application entry point (`main.ts`).                                                                   |
 
+---
+
+## Database & Prisma Models
+
+The database layer is managed by Prisma with PostgreSQL ([`prisma/schema.prisma`](prisma/schema.prisma)). Key models include:
+
+| Model | Purpose |
+|---|---|
+| `User` | Core user identity, tracking `discordId`, `githubId`, `xp`, `level`, and `tier`. |
+| `Bounty` | Bounties registered on the platform, tracking status (`OPEN`, `CLAIMED`, `COMPLETED`), prize amounts, and repo relations. |
+| `Proposal` | Community-submitted issue proposals created via `/propose`. |
+| `ProposalVote` | Community reaction votes (`UPVOTE`, `DOWNVOTE`, `SIGNAL`) associated with a proposal and voter. |
+| `DailyStreak` | Daily check-in timestamps, current streak counts, and longest recorded streaks. |
+| `QuestCompletion` | Completed quest records per user. |
+| `Project` & `Repository` | GitHub repositories tracked for bounties and proposals. |
+| `Transaction` | On-chain Algorand transaction hashes and settlement records for completed bounties. |
+| `Notification` & `BountyMessage` | Audit log of Discord message IDs for bounty feed embeds and proposal announcements. |
+
+---
+
+## Privileged Gateway Intents
+
+The bot requires the following Gateway Intents configured in the Discord Developer Portal:
+* **Server Members Intent (`GuildMembers`)**: Required to listen to `GuildMemberAdd` events and fetch member objects for role assignments and tier tracking.
+* **Message Content Intent (`MessageContent`)**: Required to inspect message reactions (`MessageReactionAdd`) for proposal voting and channel moderation.
+
+---
+
 ## Development & Build Scripts
 
 ### Prerequisites
 
-- Node.js and npm
+- Node.js (>= 18) and npm
 - PostgreSQL database
 
 ### Environment Configuration
@@ -71,5 +122,5 @@ Configure the required environment variables in your local environment or `.env`
 | `npm run lint`        | `eslint "{src,apps,libs,test}/**/*.ts" --fix`   | Runs ESLint across TypeScript files with auto-fixing.            |
 | `npm run format`      | `prettier --write "src/**/*.ts" "test/**/*.ts"` | Formats TypeScript files using Prettier.                         |
 
-> **Development vs. Production Deployment**:
+> **Development vs. Production Deployment**:  
 > The scripts listed above are intended for local development, testing, and building. They do not constitute a complete production deployment guide. A production environment requires configuring secure credentials, running database migrations (`npx prisma migrate deploy`), deploying the containerized service (e.g., via the root [`Dockerfile`](Dockerfile)), configuring Discord bot Gateway intents and permissions, and setting up persistent process management.
