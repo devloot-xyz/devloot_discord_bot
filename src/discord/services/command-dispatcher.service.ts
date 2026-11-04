@@ -58,7 +58,7 @@ export class CommandDispatcherService {
         this.logger.log(
           `[/] /${name} blocked — user ${discordId} not onboarded`,
         );
-        const message = this.onboarding.buildOnboardingMessage(discordId);
+        const message = this.onboarding.buildOnboardingMessage();
         await interaction.reply({
           content: 'You need to complete onboarding first!',
           ...message,

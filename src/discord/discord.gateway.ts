@@ -12,6 +12,7 @@ import {
   ChatInputCommandInteraction,
   ButtonInteraction,
   MessageReaction,
+  MessageFlags,
   User,
 } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,9 +47,9 @@ export class DiscordGateway implements OnModuleInit {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const guildId = process.env.DISCORD_GUILD_ID;
 
-    if (!token || !clientId) {
+    if (!token || !clientId || !guildId) {
       this.logger.warn(
-        'DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID not set — bot DISABLED',
+        'DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID or DISCORD_GUILD_ID not set — bot DISABLED',
       );
       return;
     }
@@ -144,19 +145,25 @@ export class DiscordGateway implements OnModuleInit {
     this.client.on(
       Events.InteractionCreate,
       async (interaction: Interaction) => {
-        if (interaction.isChatInputCommand()) {
-          await this.commandDispatcher.dispatch(interaction, this.client);
-        } else if (interaction.isButton()) {
-          await this.handleButton(interaction);
-        } else if (interaction.isModalSubmit()) {
-          this.logger.log(
-            `[modal] ${interaction.customId} by ${interaction.user.tag}`,
-          );
+        if (interaction.guildId !== process.env.DISCORD_GUILD_ID) return;
+        try {
+          if (interaction.isChatInputCommand()) {
+            await this.commandDispatcher.dispatch(interaction, this.client);
+          } else if (interaction.isButton()) {
+            await this.handleButton(interaction);
+          }
+        } catch {
+          this.logger.warn(`Discord interaction failed (${interaction.id})`);
+          if (!interaction.isRepliable() || interaction.replied) return;
+          const content = 'DevLoot could not complete that action. Please try again.';
+          if (interaction.deferred) await interaction.editReply(content).catch(() => {});
+          else await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
         }
       },
     );
 
     this.client.on(Events.MessageCreate, async (message: Message) => {
+      if (message.guildId !== process.env.DISCORD_GUILD_ID) return;
       await this.channelModerationService.handleMessage(message);
       await this.handleQuestChannelMessage(message);
     });
@@ -164,11 +171,13 @@ export class DiscordGateway implements OnModuleInit {
     this.client.on(
       Events.MessageReactionAdd,
       async (reaction: MessageReaction, user: User) => {
+        if (reaction.message.guildId !== process.env.DISCORD_GUILD_ID) return;
         await this.proposalVoteService.handleReactionAdd(reaction, user);
       },
     );
 
     this.client.on(Events.GuildMemberAdd, async (member: GuildMember) => {
+      if (member.guild.id !== process.env.DISCORD_GUILD_ID) return;
       await this.welcomeService.handleNewMember(member);
     });
 

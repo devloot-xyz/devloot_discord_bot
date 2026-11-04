@@ -26,27 +26,19 @@ export class DiscordVerifyService {
 
   async handleVerify(interaction: ButtonInteraction): Promise<void> {
     const discordId = interaction.user.id;
-    const userTag = interaction.user.tag;
-
-    this.logger.log(
-      `[verify] ===== VERIFY FLOW START for ${userTag} (${discordId}) =====`,
-    );
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const existing = await this.prisma.user.findUnique({
       where: { discordId },
+      select: { onboarded: true, githubId: true, xp: true },
     });
 
-    this.logger.log(
-      `[verify] DB lookup by discordId=${discordId} — ` +
-        `found: ${!!existing}, ` +
-        `id: ${existing?.id ?? 'N/A'}, ` +
-        `githubId: ${existing?.githubId ?? 'NONE'}, ` +
-        `username: ${existing?.username ?? 'NONE'}, ` +
-        `wallet: ${existing?.wallet ?? 'NONE'}, ` +
-        `githubAccessToken: ${existing?.githubAccessToken ? 'SET(' + existing.githubAccessToken.slice(0, 6) + '...)' : 'NULL'}, ` +
-        `onboarded: ${existing?.onboarded ?? false}, ` +
-        `xp: ${existing?.xp ?? 0}`,
-    );
+    if (!existing?.githubId) {
+      await interaction.editReply(
+        'New GitHub links are temporarily unavailable. There is no linked GitHub account for this Discord user.',
+      );
+      return;
+    }
 
     if (existing?.onboarded) {
       this.logger.log(
@@ -71,39 +63,7 @@ export class DiscordVerifyService {
         }
       }
 
-      await interaction.reply({
-        content: 'You are already verified! Roles synced.',
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-
-    if (!existing || !existing.githubId) {
-      this.logger.warn(
-        `[verify] BLOCKED: ${discordId} (${userTag}) has no linked GitHub — ` +
-          `user record exists: ${!!existing}, ` +
-          `githubId present: ${!!existing?.githubId}, ` +
-          `githubAccessToken present: ${!!existing?.githubAccessToken}. ` +
-          `User must complete GitHub OAuth at /connect?discord_id=${discordId}`,
-      );
-
-      const allWithDiscordId = await this.prisma.user.findMany({
-        where: { discordId },
-      });
-      if (allWithDiscordId.length > 1) {
-        this.logger.warn(
-          `[verify] DATA ISSUE: Found ${allWithDiscordId.length} user records with discordId=${discordId}: ` +
-            allWithDiscordId
-              .map((u) => `id=${u.id},githubId=${u.githubId ?? 'null'}`)
-              .join(' | '),
-        );
-      }
-
-      await interaction.reply({
-        content:
-          'No GitHub account linked yet. Click **Link GitHub** first, sign in with GitHub, then come back and click **Verify**.',
-        flags: MessageFlags.Ephemeral,
-      });
+      await interaction.editReply('You are already verified! Roles synced.');
       return;
     }
 
@@ -182,7 +142,7 @@ export class DiscordVerifyService {
         inline: false,
       });
 
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ embeds: [embed] });
     this.logger.log(`[verify] ${discordId} verified successfully`);
   }
 }
