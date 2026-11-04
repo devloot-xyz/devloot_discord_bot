@@ -105,6 +105,23 @@ export class DiscordGateway implements OnModuleInit {
         .setName('leaderboard')
         .setDescription('View top users by XP'),
       new SlashCommandBuilder()
+        .setName('lfs')
+        .setDescription('Broadcast looking for teammates')
+        .addStringOption((o) =>
+          o
+            .setName('role_needed')
+            .setDescription(
+              'The role you need (e.g. frontend dev, Rust engineer)',
+            )
+            .setRequired(true),
+        )
+        .addStringOption((o) =>
+          o
+            .setName('description')
+            .setDescription('Description of what you are building')
+            .setRequired(true),
+        ),
+      new SlashCommandBuilder()
         .setName('sync-points')
         .setDescription('Sync XP from bounty activity (admin only)'),
       new SlashCommandBuilder()

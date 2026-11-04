@@ -13,6 +13,7 @@ import { QuestCommand } from '../commands/quest';
 import { ProposalsCommand } from '../commands/proposals';
 import { OnboardingCommand } from '../commands/onboarding';
 import { LeaderboardCommand } from '../commands/leaderboard';
+import { LfsCommand } from '../commands/lfs';
 import { XpSyncService } from './xp-sync.service';
 import { DiscordRoleService } from './discord-role.service';
 import { Client } from 'discord.js';
@@ -25,6 +26,7 @@ const COMMANDS_REQUIRING_ONBOARDING = [
   'proposals',
   'leaderboard',
   'sync-points',
+  'lfs',
 ];
 
 @Injectable()
@@ -41,6 +43,7 @@ export class CommandDispatcherService {
     private proposals: ProposalsCommand,
     private onboarding: OnboardingCommand,
     private leaderboard: LeaderboardCommand,
+    private lfs: LfsCommand,
     private xpSyncService: XpSyncService,
     private roleService: DiscordRoleService,
   ) {}
@@ -114,6 +117,18 @@ export class CommandDispatcherService {
           this.logger.log(`[/leaderboard] ${discordId} viewing leaderboard`);
           await this.leaderboard.handle(interaction);
           break;
+        case 'lfs': {
+          const roleNeeded = interaction.options.getString('role_needed', true);
+          const description = interaction.options.getString(
+            'description',
+            true,
+          );
+          this.logger.log(
+            `[/lfs] ${discordId} looking for squad: ${roleNeeded}`,
+          );
+          await this.lfs.handle(interaction, roleNeeded, description);
+          break;
+        }
         case 'sync-points':
           // Admin only - check permission
           if (
