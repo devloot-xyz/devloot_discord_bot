@@ -142,6 +142,21 @@ export class DiscordVerifyService {
     );
     await this.roleService.syncTierRole(discordId, updatedUser.xp);
 
+    // Assign stack-based roles if configured in UserPreferences
+    try {
+      const prefs = await this.prisma.userPreferences.findUnique({
+        where: { userId: updatedUser.id },
+      });
+      if (prefs?.stacks?.length) {
+        await this.roleService.ensureAndAssignStackRoles(
+          discordId,
+          prefs.stacks,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`[verify] Failed to assign stack roles: ${err}`);
+    }
+
     try {
       const generalChannelId =
         await this.guildService.fetchChannelIdByName('⚡-general');
