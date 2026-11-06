@@ -65,7 +65,9 @@ Configure a local `.env` or inject these values through your existing secret man
 | `DISCORD_GUILD_ID` | Development server ID; required by the current startup guard |
 | `GITHUB_TOKEN` | GitHub API access for issue validation in `/propose` |
 | `OPENROUTER_API_KEY` | AI proposal summaries and analysis |
-| `CLIENT_URL` | Frontend base URL for DevLoot links |
+| `CLIENT_URL` | Frontend base URL for bounty links |
+| `DISCORD_CONNECT_ENABLED` | Explicit opt-in for the Core-backed account-linking flow |
+| `DISCORD_SERVICE_KEY` | Shared service credential required by that linking flow; provision through the existing secret manager |
 | `BOT_PORT` | HTTP listener port; defaults to `3001` |
 
 Configure the Gateway intents and server permissions required by the features you exercise. Start with a dedicated development guild: startup registers slash commands and connects the bot to Discord.
@@ -78,7 +80,9 @@ This generates Prisma Client and starts NestJS in watch mode. Database migration
 
 ## Current integration boundaries
 
-GitHub linking depends on the verified Core OAuth flow. Account linking remains paused where that flow has not been deployed; the bot repository alone cannot complete that integration. Existing verified-member workflows and new account linking are separate states.
+New account linking is opt-in in the current source. [`DiscordConnectService`](src/discord/services/discord-connect.service.ts) requires `DISCORD_CONNECT_ENABLED=true`, a valid `DISCORD_SERVICE_KEY`, and valid Discord client and guild IDs. It requests short-lived links and verification from the fixed DevLoot Core origin, `https://devloot.xyz`. The bot repository alone does not provide that Core integration.
+
+When linking is disabled, the onboarding interface hides new links and offers existing members a verification path. Source support does not establish whether the corresponding Core flow is enabled in a live deployment.
 
 The current Gateway startup requires all three Discord settings, including `DISCORD_GUILD_ID`, even though the registration helper contains a global-command path. AI summaries send issue text to OpenRouter using the model configured in [`AiService`](src/ai/ai.service.ts).
 
