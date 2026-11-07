@@ -7,9 +7,10 @@ export class LeaderboardCommand {
   constructor(private prisma: PrismaService) {}
 
   async handle(interaction: ChatInputCommandInteraction) {
+    // Displayed top ten: XP descending, then user ID ascending for stable ties.
     const topUsers = await this.prisma.user.findMany({
       where: { xp: { gt: 0 } },
-      orderBy: { xp: 'desc' },
+      orderBy: [{ xp: 'desc' }, { id: 'asc' }],
       take: 10,
       select: { discordId: true, xp: true, username: true },
     });
@@ -42,14 +43,26 @@ export class LeaderboardCommand {
       return `${medal} ${tierEmoji(u.xp)} ${name} — **${u.xp} XP**`;
     });
 
-    // Check requesting user's rank
-    const allUsers = await this.prisma.user.findMany({
-      where: { xp: { gt: 0 } },
-      orderBy: { xp: 'desc' },
-      select: { discordId: true },
+    // Rank of the caller: fetch only the caller, then count eligible users
+    // ahead of them using the same ordering (XP desc, ID asc).
+    const caller = await this.prisma.user.findUnique({
+      where: { discordId: interaction.user.id },
+      select: { id: true, xp: true },
     });
-    const userRank =
-      allUsers.findIndex((u) => u.discordId === interaction.user.id) + 1;
+
+    let userRank = 0;
+    if (caller && caller.xp > 0) {
+      const usersAhead = await this.prisma.user.count({
+        where: {
+          xp: { gt: 0 },
+          OR: [
+            { xp: { gt: caller.xp } },
+            { xp: caller.xp, id: { lt: caller.id } },
+          ],
+        },
+      });
+      userRank = usersAhead + 1;
+    }
 
     const embed = new EmbedBuilder()
       .setColor(Colors.Gold)
