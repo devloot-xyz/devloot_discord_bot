@@ -9,7 +9,7 @@ export class LeaderboardCommand {
   async handle(interaction: ChatInputCommandInteraction) {
     const topUsers = await this.prisma.user.findMany({
       where: { xp: { gt: 0 } },
-      orderBy: { xp: 'desc' },
+      orderBy: [{ xp: 'desc' }, { id: 'asc' }],
       take: 10,
       select: { discordId: true, xp: true, username: true },
     });
@@ -42,14 +42,22 @@ export class LeaderboardCommand {
       return `${medal} ${tierEmoji(u.xp)} ${name} — **${u.xp} XP**`;
     });
 
-    // Check requesting user's rank
-    const allUsers = await this.prisma.user.findMany({
-      where: { xp: { gt: 0 } },
-      orderBy: { xp: 'desc' },
-      select: { discordId: true },
+    const caller = await this.prisma.user.findUnique({
+      where: { discordId: interaction.user.id },
+      select: { id: true, xp: true },
     });
     const userRank =
-      allUsers.findIndex((u) => u.discordId === interaction.user.id) + 1;
+      caller && caller.xp > 0
+        ? (await this.prisma.user.count({
+            where: {
+              xp: { gt: 0 },
+              OR: [
+                { xp: { gt: caller.xp } },
+                { xp: caller.xp, id: { lt: caller.id } },
+              ],
+            },
+          })) + 1
+        : 0;
 
     const embed = new EmbedBuilder()
       .setColor(Colors.Gold)
